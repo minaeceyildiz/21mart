@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createAppointment, ApiError } from "../services/appointmentService";
 import { getTeachers, Teacher } from "../services/teacherService";
@@ -118,19 +118,6 @@ const TeacherAppointmentPage: React.FC = () => {
   };
 
   const isOtherSelected = reason === "other";
-
-  const timeOptions = React.useMemo(() => {
-    const list: string[] = [];
-    for (let hour = 9; hour <= 17; hour++) {
-      const minutes = hour === 17 ? [0] : [0, 30];
-      for (const minute of minutes) {
-        const hh = hour.toString().padStart(2, '0');
-        const mm = minute.toString().padStart(2, '0');
-        list.push(`${hh}:${mm}`);
-      }
-    }
-    return list;
-  }, []);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -279,19 +266,16 @@ const TeacherAppointmentPage: React.FC = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Saat
               </label>
-              <select
+              <input
+                type="time"
                 value={time}
-                onChange={(e) => { setTime(e.target.value); setError(""); }}
+                onChange={(e) => setTime(e.target.value)}
+                min="09:00"
+                max="17:00"
+                step={1800}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
-              >
-                <option value="">Saat seçiniz</option>
-                {timeOptions.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 
