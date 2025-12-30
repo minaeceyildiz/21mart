@@ -173,3 +173,4 @@ SELECT
     END AS durum;
 
 
+

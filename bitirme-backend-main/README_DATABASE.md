@@ -75,3 +75,4 @@ Backend başladığında otomatik oluşturulur:
 Detaylı rehber için: `DATABASE_SETUP.md` dosyasına bakın.
 
 
+
