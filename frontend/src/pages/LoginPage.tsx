@@ -21,11 +21,28 @@ const LoginPage: React.FC = () => {
     try {
       const response = await login({ username, password, role });
 
+      console.log('Login response:', response); // Debug için
+      console.log('User role:', response.user.role); // Debug için
+
       // Başarılı giriş sonrası role göre yönlendir
-      if (response.user.role === "student") {
-        navigate("/ogrenci");
+      // Backend'den gelen role değerini kullan (normalizedRole: 'student' veya 'instructor')
+      const userRole = response.user.role;
+      console.log('Navigating with role:', userRole); // Debug için
+      
+      if (userRole === "student") {
+        console.log('Navigating to /ogrenci'); // Debug için
+        navigate("/ogrenci", { replace: true });
+      } else if (userRole === "instructor") {
+        console.log('Navigating to /ogretim-elemani'); // Debug için
+        navigate("/ogretim-elemani", { replace: true });
       } else {
-        navigate("/ogretim-elemani");
+        // Eğer role belirlenemezse, seçilen role göre yönlendir
+        console.log('Role not determined, using selected role:', role); // Debug için
+        if (role === "student") {
+          navigate("/ogrenci", { replace: true });
+        } else {
+          navigate("/ogretim-elemani", { replace: true });
+        }
       }
     } catch (err) {
       const apiError = err as ApiError;
@@ -54,11 +71,28 @@ const LoginPage: React.FC = () => {
         studentNo: role === "student" ? undefined : undefined,
       });
 
-      // Kayıt sonrası otomatik yönlendiriliyor
-      if (response.user.role === "student") {
-        navigate("/ogrenci");
+      console.log('Register response:', response); // Debug için
+      console.log('User role:', response.user.role); // Debug için
+
+      // Kayıt sonrası role göre yönlendir
+      // Backend'den gelen role değerini kullan (normalizedRole: 'student' veya 'instructor')
+      const userRole = response.user.role;
+      console.log('Navigating with role (register):', userRole); // Debug için
+      
+      if (userRole === "student") {
+        console.log('Navigating to /ogrenci (register)'); // Debug için
+        navigate("/ogrenci", { replace: true });
+      } else if (userRole === "instructor") {
+        console.log('Navigating to /ogretim-elemani (register)'); // Debug için
+        navigate("/ogretim-elemani", { replace: true });
       } else {
-        navigate("/ogretim-elemani");
+        // Eğer role belirlenemezse, seçilen role göre yönlendir
+        console.log('Role not determined, using selected role (register):', role); // Debug için
+        if (role === "student") {
+          navigate("/ogrenci", { replace: true });
+        } else {
+          navigate("/ogretim-elemani", { replace: true });
+        }
       }
     } catch (err) {
       const apiError = err as ApiError;

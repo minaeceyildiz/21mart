@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ApiProject.Models;
 
-[Table("MenuItems")]
 public class MenuItem
 {
     [Key]

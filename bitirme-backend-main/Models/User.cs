@@ -3,7 +3,6 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ApiProject.Models;
 
-[Table("Users")]
 public class User
 {
     [Key]
@@ -28,6 +27,9 @@ public class User
     
     [MaxLength(50)]
     public string? StudentNo { get; set; }
+    
+    [MaxLength(50)]
+    public string? LoginType { get; set; }
     
     // Navigation Properties
     public virtual ICollection<Appointment> StudentAppointments { get; set; } = new List<Appointment>();

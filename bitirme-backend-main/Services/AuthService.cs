@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Data.Common;
 using BCrypt.Net;
 
 namespace ApiProject.Services;
@@ -48,6 +49,22 @@ public class AuthService : IAuthService
         if (!BCrypt.Net.BCrypt.Verify(loginDto.Password, user.PasswordHash))
             return null;
 
+        // AppDbContext.cs'de role_id değeri otomatik olarak enum'a çevriliyor (role_id - 1)
+        // Bu yüzden user.Role zaten doğru enum değerini içeriyor
+        var userRoleFromDb = user.Role;
+
+        // Rol kontrolü: Öğrenci akademik (Teacher) rolü ile giriş yapamamalı
+        if (userRoleFromDb == UserRole.Student && loginDto.Role == UserRole.Teacher)
+        {
+            throw new UnauthorizedAccessException("Öğrenci kullanıcılar akademik personel rolü ile giriş yapamaz.");
+        }
+
+        // Kullanıcının gerçek rolü ile giriş yapmaya çalıştığı rol eşleşmeli
+        if (userRoleFromDb != loginDto.Role)
+        {
+            throw new UnauthorizedAccessException("Seçilen rol ile kullanıcı rolü eşleşmiyor.");
+        }
+
         var token = GenerateJwtToken(user);
 
         return new AuthResponseDto
@@ -61,23 +78,49 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto)
     {
-        // E-posta kontrolü
+        // Kullanıcı adı kontrolü (Name ile kontrol)
         var existingUser = await _context.Users
-            .FirstOrDefaultAsync(u => u.Email.ToLower() == registerDto.Email.ToLower());
+            .FirstOrDefaultAsync(u => u.Name.ToLower().Trim() == registerDto.Username.ToLower().Trim());
 
         if (existingUser != null)
-            throw new InvalidOperationException("Bu e-posta adresi zaten kullanılıyor.");
+            throw new InvalidOperationException("Bu kullanıcı adı zaten kullanılıyor.");
+
+        // Email otomatik oluştur (kullanıcı adından)
+        var email = $"{registerDto.Username.ToLower().Trim().Replace(" ", ".")}@baskent.edu.tr";
+        
+        // Email kontrolü (eğer aynı email varsa)
+        var existingEmail = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+
+        if (existingEmail != null)
+        {
+            // Email çakışması durumunda benzersiz bir email oluştur
+            var counter = 1;
+            var baseEmail = email;
+            while (existingEmail != null)
+            {
+                email = $"{registerDto.Username.ToLower().Trim().Replace(" ", ".")}{counter}@baskent.edu.tr";
+                existingEmail = await _context.Users
+                    .FirstOrDefaultAsync(u => u.Email.ToLower() == email);
+                counter++;
+            }
+        }
 
         // Şifreyi BCrypt ile hashle
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(registerDto.Password);
 
+        // role_id foreign key için roles tablosundaki gerçek ID'yi kontrol et
+        // AppDbContext.cs'de enum değerini +1 yaparak kaydediyoruz (Student=0 -> role_id=1, Teacher=1 -> role_id=2)
+        // Bu yüzden enum değerini direkt kullanıyoruz, AppDbContext otomatik olarak +1 yapacak
         var user = new User
         {
-            Name = registerDto.Name,
-            Email = registerDto.Email.ToLower(),
+            Name = registerDto.Username,
+            Email = email,
             PasswordHash = passwordHash,
-            Role = registerDto.Role,
+            Role = registerDto.Role, // Enum değerini direkt kullan (Student=0, Teacher=1, vb.)
+            // AppDbContext.cs'de enum değerini +1 yaparak role_id'ye kaydedecek
             StudentNo = registerDto.StudentNo
+            // login_type kolonu veritabanında özel bir tip olduğu için mapping'den çıkarıldı
         };
 
         _context.Users.Add(user);

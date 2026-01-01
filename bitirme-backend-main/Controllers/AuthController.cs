@@ -23,6 +23,18 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register([FromBody] RegisterDto registerDto)
     {
+        // Request body null kontrolü
+        if (registerDto == null)
+        {
+            return BadRequest(new { message = "Request body boş olamaz." });
+        }
+
+        // ModelState validation kontrolü
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
         try
         {
             var result = await _authService.RegisterAsync(registerDto);
@@ -32,9 +44,31 @@ public class AuthController : ControllerBase
         {
             return BadRequest(new { message = ex.Message });
         }
+        catch (DbUpdateException dbEx)
+        {
+            // Veritabanı güncelleme hatalarını daha detaylı göster
+            var errorMessage = dbEx.Message;
+            if (dbEx.InnerException != null)
+            {
+                errorMessage += " | Inner: " + dbEx.InnerException.Message;
+            }
+            // PostgreSQL hata kodunu ve mesajını göster
+            return StatusCode(500, new { 
+                message = "Kayıt işlemi sırasında veritabanı hatası oluştu.", 
+                error = errorMessage,
+                innerError = dbEx.InnerException?.Message,
+                stackTrace = dbEx.StackTrace
+            });
+        }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Kayıt işlemi sırasında bir hata oluştu.", error = ex.Message });
+            // Inner exception varsa onu da göster
+            var errorMessage = ex.Message;
+            if (ex.InnerException != null)
+            {
+                errorMessage += " | Inner: " + ex.InnerException.Message;
+            }
+            return StatusCode(500, new { message = "Kayıt işlemi sırasında bir hata oluştu.", error = errorMessage, innerError = ex.InnerException?.Message });
         }
     }
 
@@ -53,12 +87,23 @@ public class AuthController : ControllerBase
             return BadRequest(ModelState);
         }
 
-        var result = await _authService.LoginAsync(loginDto);
+        try
+        {
+            var result = await _authService.LoginAsync(loginDto);
 
-        if (result == null)
-            return Unauthorized(new { message = "Kullanıcı adı/e-posta veya şifre hatalı." });
+            if (result == null)
+                return Unauthorized(new { message = "Kullanıcı adı/e-posta veya şifre hatalı." });
 
-        return Ok(result);
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Giriş işlemi sırasında bir hata oluştu.", error = ex.Message });
+        }
     }
 
     /// <summary>

@@ -42,12 +42,15 @@ export interface RegisterRequest {
 export const login = async (credentials: LoginRequest): Promise<LoginResponse> => {
   try {
     // Backend'in beklediği formata göre request body'yi hazırla
-    // Backend sadece usernameOrEmail ve password bekliyor
-    // email alanını göndermiyoruz çünkü backend'de property çakışmasına neden oluyor
-    const requestBody = {
+    const requestBody: any = {
       usernameOrEmail: credentials.username, // Kullanıcı adı veya email
       password: credentials.password,
     };
+
+    // Role'ü backend formatına çevir (student -> Student, instructor -> Teacher)
+    if (credentials.role) {
+      requestBody.role = credentials.role === 'instructor' ? 'Teacher' : 'Student';
+    }
 
     console.log('Login request body:', requestBody); // Debug için
 
@@ -57,9 +60,20 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
     // Backend'den gelen response'u frontend formatına dönüştür
     const backendData = response.data;
     
+    console.log('Backend role:', backendData.role); // Debug için
+    
     // Role'ü küçük harfe çevir ve normalize et
-    const roleLower = backendData.role.toLowerCase();
-    const normalizedRole = roleLower === 'teacher' || roleLower === 'instructor' ? 'instructor' : 'student';
+    // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
+    const roleLower = (backendData.role || '').toLowerCase();
+    let normalizedRole: 'student' | 'instructor';
+    
+    if (roleLower === 'teacher' || roleLower === 'instructor') {
+      normalizedRole = 'instructor';
+    } else {
+      normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
+    }
+    
+    console.log('Normalized role:', normalizedRole); // Debug için
     
     // Frontend formatına dönüştür
     const loginResponse: LoginResponse = {
@@ -102,15 +116,27 @@ export const register = async (payload: RegisterRequest): Promise<LoginResponse>
     const response = await apiClient.post<BackendLoginResponse>('/Auth/register', requestBody);
     const backendData = response.data;
 
-    const roleLower = backendData.role.toLowerCase();
-    const normalizedRole = roleLower === 'teacher' || roleLower === 'instructor' ? 'instructor' : 'student';
+    console.log('Backend role (register):', backendData.role); // Debug için
+
+    // Role'ü küçük harfe çevir ve normalize et
+    // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
+    const roleLower = (backendData.role || '').toLowerCase();
+    let normalizedRole: 'student' | 'instructor';
+    
+    if (roleLower === 'teacher' || roleLower === 'instructor') {
+      normalizedRole = 'instructor';
+    } else {
+      normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
+    }
+    
+    console.log('Normalized role (register):', normalizedRole); // Debug için
 
     const loginResponse: LoginResponse = {
       token: backendData.token,
       user: {
         id: backendData.userId.toString(),
         username: backendData.name,
-        role: normalizedRole as 'student' | 'instructor',
+        role: normalizedRole,
         name: backendData.name,
       },
     };
