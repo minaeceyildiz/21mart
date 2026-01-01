@@ -240,8 +240,133 @@ public class AppointmentController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Hocanın bekleyen randevu taleplerini getirir
+    /// </summary>
+    [HttpGet("pending-requests")]
+    public async Task<ActionResult<List<AppointmentResponseDto>>> GetPendingRequests()
+    {
+        try
+        {
+            var userEmail = GetCurrentUserEmail();
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized("Kullanıcı bilgisi bulunamadı");
+
+            var userRole = GetCurrentUserRole();
+            _logger.LogInformation("GetPendingRequests çağrıldı. Email: {Email}, Role: {Role}", userEmail, userRole);
+            
+            if (!string.Equals(userRole, "Teacher", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("GetPendingRequests - Yetkisiz erişim. Email: {Email}, Role: {Role}", userEmail, userRole);
+                return Forbid("Bu işlem sadece öğretmenler için geçerlidir.");
+            }
+
+            var appointments = await _appointmentService.GetPendingAppointmentsByTeacherEmailAsync(userEmail);
+            _logger.LogInformation("GetPendingRequests - Bulunan randevu sayısı: {Count} (Email: {Email})", appointments.Count, userEmail);
+            
+            var response = appointments.Select(a => MapToDto(a)).ToList();
+            return Ok(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Bekleyen randevu talepleri getirilirken hata oluştu");
+            return StatusCode(500, "Bekleyen randevu talepleri getirilirken bir hata oluştu");
+        }
+    }
+
+    /// <summary>
+    /// Hoca randevu talebini onaylar
+    /// </summary>
+    [HttpPost("{id}/approve")]
+    public async Task<ActionResult<AppointmentResponseDto>> ApproveAppointment(int id)
+    {
+        try
+        {
+            var appointment = await _appointmentService.GetAppointmentByIdAsync(id);
+            if (appointment == null)
+                return NotFound($"ID: {id} olan randevu bulunamadı");
+
+            // Sadece hoca kendi randevularını onaylayabilir
+            var userEmail = GetCurrentUserEmail();
+            var userRole = GetCurrentUserRole();
+            
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized("Kullanıcı bilgisi bulunamadı");
+
+            if (!string.Equals(userRole, "Teacher", StringComparison.OrdinalIgnoreCase))
+                return Forbid("Bu işlem sadece öğretmenler için geçerlidir.");
+
+            if (appointment.Teacher?.Email.ToLower() != userEmail.ToLower())
+                return Forbid("Bu randevuyu onaylama yetkiniz yok. Sadece kendi randevularınızı onaylayabilirsiniz.");
+
+            var updatedAppointment = await _appointmentService.ApproveAppointmentAsync(id);
+            if (updatedAppointment == null)
+                return NotFound($"ID: {id} olan randevu bulunamadı");
+
+            return Ok(MapToDto(updatedAppointment));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Randevu onaylanırken validasyon hatası: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Randevu onaylanırken hata oluştu");
+            return StatusCode(500, "Randevu onaylanırken bir hata oluştu");
+        }
+    }
+
+    /// <summary>
+    /// Hoca randevu talebini reddeder
+    /// </summary>
+    [HttpPost("{id}/reject")]
+    public async Task<ActionResult<AppointmentResponseDto>> RejectAppointment(int id, [FromBody] RejectAppointmentDto? dto = null)
+    {
+        try
+        {
+            var appointment = await _appointmentService.GetAppointmentByIdAsync(id);
+            if (appointment == null)
+                return NotFound($"ID: {id} olan randevu bulunamadı");
+
+            // Sadece hoca kendi randevularını reddedebilir
+            var userEmail = GetCurrentUserEmail();
+            var userRole = GetCurrentUserRole();
+            
+            if (string.IsNullOrEmpty(userEmail))
+                return Unauthorized("Kullanıcı bilgisi bulunamadı");
+
+            if (!string.Equals(userRole, "Teacher", StringComparison.OrdinalIgnoreCase))
+                return Forbid("Bu işlem sadece öğretmenler için geçerlidir.");
+
+            if (appointment.Teacher?.Email.ToLower() != userEmail.ToLower())
+                return Forbid("Bu randevuyu reddetme yetkiniz yok. Sadece kendi randevularınızı reddedebilirsiniz.");
+
+            var rejectionReason = dto?.RejectionReason;
+            var updatedAppointment = await _appointmentService.RejectAppointmentAsync(id, rejectionReason);
+            if (updatedAppointment == null)
+                return NotFound($"ID: {id} olan randevu bulunamadı");
+
+            return Ok(MapToDto(updatedAppointment));
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Randevu reddedilirken validasyon hatası: {Message}", ex.Message);
+            return BadRequest(new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Randevu reddedilirken hata oluştu");
+            return StatusCode(500, "Randevu reddedilirken bir hata oluştu");
+        }
+    }
+
     private AppointmentResponseDto MapToDto(Models.Appointment appointment)
     {
+        // Debug: RequestReason değerini logla
+        _logger.LogInformation("MapToDto - Appointment ID: {Id}, RequestReason: '{RequestReason}'", 
+            appointment.Id, appointment.RequestReason ?? "null");
+        
         return new AppointmentResponseDto
         {
             Id = appointment.Id,
@@ -253,7 +378,7 @@ public class AppointmentController : ControllerBase
             Date = appointment.Date,
             Time = appointment.Time,
             Subject = appointment.Subject,
-            RequestReason = appointment.RequestReason,
+            RequestReason = appointment.RequestReason ?? "other", // Öğrencinin yazdığı metin veya enum değeri
             Status = appointment.Status.ToString(),
             RejectionReason = appointment.RejectionReason,
             CreatedAt = appointment.CreatedAt,

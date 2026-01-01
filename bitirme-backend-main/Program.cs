@@ -128,6 +128,7 @@ try
     builder.Services.AddScoped<IAppointmentService, AppointmentService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
     builder.Services.AddScoped<ICafeService, CafeService>();
+    builder.Services.AddScoped<ScheduleService>();
 
     // Background Service
     builder.Services.AddHostedService<OrderCleanupService>();
@@ -163,13 +164,60 @@ try
     app.MapControllers();
     app.MapHub<NotificationHub>("/notificationHub");
 
-    // --- BAŞLANGIÇ VERİLERİNİ YÜKLEME KODU ---
+    // --- MIGRATION VE BAŞLANGIÇ VERİLERİNİ YÜKLEME KODU ---
     using (var scope = app.Services.CreateScope())
     {
         var services = scope.ServiceProvider;
         try
         {
             var context = services.GetRequiredService<ApiProject.Data.AppDbContext>();
+            
+            // Migration'ları otomatik uygula (arkadaşlarınız için)
+            context.Database.Migrate();
+            
+            // request_reason kolonunu ekle (eğer yoksa) - async/await kullan
+            try
+            {
+                var connection = context.Database.GetDbConnection();
+                var wasOpen = connection.State == System.Data.ConnectionState.Open;
+                if (!wasOpen)
+                {
+                    await connection.OpenAsync();
+                }
+                try
+                {
+                    using var command = connection.CreateCommand();
+                    command.CommandText = @"
+                        DO $$ 
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 
+                                FROM information_schema.columns 
+                                WHERE table_name = 'appointments' 
+                                AND column_name = 'request_reason'
+                            ) THEN
+                                ALTER TABLE ""appointments"" 
+                                ADD COLUMN ""request_reason"" TEXT;
+                                RAISE NOTICE 'request_reason kolonu eklendi.';
+                            END IF;
+                        END $$;
+                    ";
+                    await command.ExecuteNonQueryAsync();
+                    Console.WriteLine("request_reason kolonu kontrol edildi/eklendi.");
+                }
+                finally
+                {
+                    if (!wasOpen)
+                    {
+                        await connection.CloseAsync();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"request_reason kolonu eklenirken hata oluştu (zaten var olabilir): {ex.Message}");
+            }
+            
             // Veritabanını oluştur ve verileri bas
             ApiProject.Data.DbInitializer.Initialize(context);
         }

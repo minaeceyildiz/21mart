@@ -1,5 +1,6 @@
 using ApiProject.Models;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Storage.Internal;
 
 namespace ApiProject.Data
 {
@@ -14,6 +15,7 @@ namespace ApiProject.Data
         public DbSet<Order> Orders { get; set; }
         public DbSet<OrderItem> OrderItems { get; set; }
         public DbSet<Notification> Notifications { get; set; }
+        public DbSet<InstructorSchedule> InstructorSchedules { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -26,6 +28,7 @@ namespace ApiProject.Data
             modelBuilder.Entity<Order>().ToTable("Orders");
             modelBuilder.Entity<OrderItem>().ToTable("OrderItems");
             modelBuilder.Entity<Notification>().ToTable("Notifications");
+            modelBuilder.Entity<InstructorSchedule>().ToTable("instructor_schedule");
 
             // User entity column mappings - Veritabanındaki gerçek kolon adlarına göre
             modelBuilder.Entity<User>(entity =>
@@ -48,8 +51,41 @@ namespace ApiProject.Data
                 entity.Ignore(e => e.LoginType);
             });
 
+            // Appointment entity column mappings - snake_case kolon adları
+            modelBuilder.Entity<Appointment>(entity =>
+            {
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.StudentId).HasColumnName("student_id");
+                entity.Property(e => e.TeacherId).HasColumnName("instructor_id");
+                entity.Property(e => e.Subject).HasColumnName("course_name");
+                
+                // RequestReason'ı request_reason kolonuna map et
+                // Kolon varsa otomatik okunur, yoksa null olur (nullable yapıyoruz)
+                entity.Property(e => e.RequestReason)
+                    .HasColumnName("request_reason")
+                    .HasColumnType("text")
+                    .IsRequired(false); // Nullable yap (kolon yoksa hata vermesin)
+
+                
+                // status kolonu da PostgreSQL enum tipinde (appointment_status)
+                // EF Core enum'a cast edemediği için ignore edip raw SQL ile güncelliyoruz
+                entity.Ignore(e => e.Status);
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.Property(e => e.UpdatedAt).HasColumnName("responded_at");
+                
+                // Date ve Time'ı ignore et, bunlar scheduled_at'ten hesaplanacak
+                entity.Ignore(e => e.Date);
+                entity.Ignore(e => e.Time);
+                
+                // scheduled_at kolonu için shadow property oluştur
+                entity.Property<DateTime>("ScheduledAt")
+                    .HasColumnName("scheduled_at");
+                
+                // RejectionReason kolonu yok, ignore et
+                entity.Ignore(e => e.RejectionReason);
+            });
+
             // Enum Ayarları
-            modelBuilder.Entity<Appointment>().Property(a => a.Status).HasConversion<string>();
             modelBuilder.Entity<Order>().Property(o => o.Status).HasConversion<string>();
             modelBuilder.Entity<Notification>().Property(n => n.Type).HasConversion<string>();
 
@@ -65,6 +101,21 @@ namespace ApiProject.Data
                 .WithMany(u => u.TeacherAppointments)
                 .HasForeignKey(a => a.TeacherId)
                 .OnDelete(DeleteBehavior.Restrict);
+            
+            // InstructorSchedule entity column mappings
+            modelBuilder.Entity<InstructorSchedule>(entity =>
+            {
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.InstructorId).HasColumnName("instructor_id");
+                entity.Property(e => e.DayOfWeek).HasColumnName("day_of_week");
+                entity.Property(e => e.StartTime).HasColumnName("start_time");
+                entity.Property(e => e.CourseName).HasColumnName("course_name");
+                
+                entity.HasOne(s => s.Instructor)
+                    .WithMany()
+                    .HasForeignKey(s => s.InstructorId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
         }
     }
 }

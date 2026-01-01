@@ -21,6 +21,7 @@ export interface BackendAppointmentRequest {
   date: string; // ISO datetime string: "2025-12-24T17:55:50.911Z"
   time: string; // TimeSpan string formatı: "HH:mm" (örn: "14:30")
   subject: string;
+  requestReason?: string; // Öğrencinin yazdığı sebep (diğer seçeneğinde özel metin)
 }
 
 export interface Appointment {
@@ -101,6 +102,7 @@ export const createAppointment = async (
       date: isoDateTime,
       time: timeString, // String format: "HH:mm" (örn: "14:30")
       subject: appointment.course.trim(), // course -> subject, boşlukları temizle
+      requestReason: appointment.reason, // Öğrencinin yazdığı sebep (diğer seçeneğinde özel metin)
     };
 
     console.log('Lecturer name:', appointment.lecturerName);
@@ -171,6 +173,20 @@ export const getInstructorAppointments = async (): Promise<Appointment[]> => {
   } catch (error: any) {
     throw {
       message: error.response?.data?.message || 'Randevular yüklenirken bir hata oluştu',
+      status: error.response?.status,
+    } as ApiError;
+  }
+};
+
+// Öğretim elemanının bekleyen randevu taleplerini getir
+export const getPendingRequests = async (): Promise<Appointment[]> => {
+  try {
+    // Backend'de pending-requests endpoint'i var (sadece öğretim elemanı için)
+    const response = await apiClient.get<Appointment[]>('/Appointment/pending-requests');
+    return response.data;
+  } catch (error: any) {
+    throw {
+      message: error.response?.data?.message || 'Bekleyen randevu talepleri yüklenirken bir hata oluştu',
       status: error.response?.status,
     } as ApiError;
   }

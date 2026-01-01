@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createAppointment, ApiError } from "../services/appointmentService";
+import { createAppointment, getStudentAppointments, Appointment, ApiError } from "../services/appointmentService";
 import { getTeachers, Teacher } from "../services/teacherService";
 
 type Reason = "question" | "exam" | "other";
@@ -18,6 +18,8 @@ const TeacherAppointmentPage: React.FC = () => {
   const [error, setError] = useState<string>("");
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loadingTeachers, setLoadingTeachers] = useState(false);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
 
   // Öğretmen listesini yükle
   useEffect(() => {
@@ -34,6 +36,26 @@ const TeacherAppointmentPage: React.FC = () => {
       }
     };
     loadTeachers();
+  }, []);
+
+  // Randevuları yükle
+  useEffect(() => {
+    const loadAppointments = async () => {
+      setLoadingAppointments(true);
+      try {
+        const data = await getStudentAppointments();
+        // Sadece onaylanan ve reddedilen randevuları göster
+        const filteredData = data.filter(
+          (apt) => apt.status?.toLowerCase() === "approved" || apt.status?.toLowerCase() === "rejected"
+        );
+        setAppointments(filteredData);
+      } catch (err) {
+        console.error("Randevular yüklenirken hata:", err);
+      } finally {
+        setLoadingAppointments(false);
+      }
+    };
+    loadAppointments();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +79,7 @@ const TeacherAppointmentPage: React.FC = () => {
         } as ApiError;
       }
 
-      // Saat validation: 09:00-17:00 arası ve 30 dk aralıklarla
+      // Saat validation: 09:00-17:00 arası ve 30 dk aralıklarla (17:00 dahil)
       if (!time) {
         setError("Lütfen bir saat seçin.");
         setLoading(false);
@@ -68,14 +90,28 @@ const TeacherAppointmentPage: React.FC = () => {
       const hour = parseInt(hourStr, 10);
       const minute = parseInt(minuteStr, 10);
 
-      if (
-        hour < 9 ||
-        hour > 17 ||
-        (hour === 17 && minute !== 0) ||
-        (minute !== 0 && minute !== 30)
-      ) {
+      // 09:00-17:00 arası kontrol (17:00 dahil)
+      if (hour < 9 || hour > 17) {
         setError(
-          "Lütfen 09:00 ile 17:00 arasında, 30 dakika aralıklarla bir saat seçin."
+          "Lütfen 09:00 ile 17:00 arasında bir saat seçin."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 17:00'dan sonraki saatler kontrolü
+      if (hour === 17 && minute > 0) {
+        setError(
+          "Lütfen 17:00'a kadar bir saat seçin."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 30 dakika aralıklarla kontrol (00 veya 30)
+      if (minute !== 0 && minute !== 30) {
+        setError(
+          "Lütfen 30 dakika aralıklarla bir saat seçin (örn: 09:00, 09:30, 10:00)."
         );
         setLoading(false);
         return;
@@ -102,6 +138,13 @@ const TeacherAppointmentPage: React.FC = () => {
       setDate("");
       setTime("");
       setNote("");
+
+      // Randevuları yenile
+      const data = await getStudentAppointments();
+      const filteredData = data.filter(
+        (apt) => apt.status?.toLowerCase() === "approved" || apt.status?.toLowerCase() === "rejected"
+      );
+      setAppointments(filteredData);
 
       // Öğrenci dashboard'una dön
       navigate("/ogrenci");
@@ -132,11 +175,14 @@ const TeacherAppointmentPage: React.FC = () => {
       </header>
 
       {/* İçerik */}
-      <main className="flex-1 flex items-center justify-center px-4 py-8">
-        <form
-          onSubmit={handleSubmit}
-          className="w-full max-w-lg bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-4"
-        >
+      <main className="flex-1 px-4 py-8">
+        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Sol taraf - Form */}
+          <div className="lg:col-span-2">
+            <form
+              onSubmit={handleSubmit}
+              className="w-full bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-4"
+            >
           <h2 className="text-xl font-semibold text-slate-900 mb-2">
             Randevu Talep Formu
           </h2>
@@ -266,16 +312,28 @@ const TeacherAppointmentPage: React.FC = () => {
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Saat
               </label>
-              <input
-                type="time"
+              <select
                 value={time}
                 onChange={(e) => setTime(e.target.value)}
-                min="09:00"
-                max="17:00"
-                step={1800}
                 className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 required
-              />
+              >
+                <option value="">Saat seçiniz</option>
+                {(() => {
+                  const times = [];
+                  for (let hour = 9; hour <= 17; hour++) {
+                    times.push(`${String(hour).padStart(2, '0')}:00`);
+                    if (hour < 17) {
+                      times.push(`${String(hour).padStart(2, '0')}:30`);
+                    }
+                  }
+                  return times.map((timeValue) => (
+                    <option key={timeValue} value={timeValue}>
+                      {timeValue}
+                    </option>
+                  ));
+                })()}
+              </select>
             </div>
           </div>
 
@@ -290,6 +348,68 @@ const TeacherAppointmentPage: React.FC = () => {
             </button>
           </div>
         </form>
+          </div>
+
+          {/* Sağ taraf - Randevularım */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
+              <h2 className="text-xl font-semibold text-slate-900 mb-4">
+                Randevularım
+              </h2>
+              
+              {loadingAppointments ? (
+                <div className="text-center py-8">
+                  <p className="text-slate-500 text-sm">Yükleniyor...</p>
+                </div>
+              ) : appointments.length === 0 ? (
+                <p className="text-slate-500 text-sm">
+                  Henüz onaylanan veya reddedilen randevu yok.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {appointments.map((apt) => (
+                    <div
+                      key={apt.id}
+                      className={`border rounded-lg p-4 ${
+                        apt.status?.toLowerCase() === "approved"
+                          ? "border-green-200 bg-green-50"
+                          : "border-red-200 bg-red-50"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="font-semibold text-slate-900 text-sm">
+                            {(apt as any).subject || apt.course || "Ders belirtilmemiş"}
+                          </p>
+                          <p className="text-xs text-slate-600 mt-1">
+                            Öğretmen: {(apt as any).teacherName || "Bilinmiyor"}
+                          </p>
+                          <p className="text-xs text-slate-600">
+                            {apt.date ? new Date(apt.date).toLocaleDateString('tr-TR') : 'Tarih belirtilmemiş'} - {apt.time ? (typeof apt.time === 'string' ? apt.time : (typeof apt.time === 'object' && apt.time !== null ? `${String((apt.time as any).hours || 0).padStart(2, '0')}:${String((apt.time as any).minutes || 0).padStart(2, '0')}` : 'Saat belirtilmemiş')) : 'Saat belirtilmemiş'}
+                          </p>
+                          {(apt as any).rejectionReason && (
+                            <p className="text-xs text-red-600 mt-1 italic">
+                              Red Nedeni: {(apt as any).rejectionReason}
+                            </p>
+                          )}
+                        </div>
+                        <span
+                          className={`px-2 py-1 rounded text-xs font-medium ${
+                            apt.status?.toLowerCase() === "approved"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-red-100 text-red-800"
+                          }`}
+                        >
+                          {apt.status?.toLowerCase() === "approved" ? "Onaylandı" : "Reddedildi"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   );

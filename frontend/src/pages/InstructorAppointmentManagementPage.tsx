@@ -2,10 +2,12 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
   getInstructorAppointments,
+  getPendingRequests,
   updateAppointmentStatus,
   Appointment,
   ApiError,
 } from "../services/appointmentService";
+import { getMySchedule, saveSchedule, ScheduleSlot } from "../services/scheduleService";
 
 const days = ["Pzt", "Sal", "Çar", "Per", "Cum"];
 const times = [
@@ -27,19 +29,36 @@ const InstructorAppointmentManagement: React.FC = () => {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   useEffect(() => {
     loadAppointments();
-  }, []);
+  }, [activeTab]);
+
+  useEffect(() => {
+    loadSchedule();
+  }, []); // Sadece sayfa ilk yüklendiğinde çağrıl
 
   const loadAppointments = async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await getInstructorAppointments();
+      // "Gelen Talepler" sekmesi için pending-requests endpoint'ini çağır
+      // "Randevularım" sekmesi için my-appointments endpoint'ini çağır
+      let data: Appointment[];
+      if (activeTab === "requests") {
+        console.log("Pending requests yükleniyor...");
+        data = await getPendingRequests();
+        console.log("Pending requests yüklendi:", data);
+      } else {
+        console.log("Tüm randevular yükleniyor...");
+        data = await getInstructorAppointments();
+        console.log("Tüm randevular yüklendi:", data);
+      }
       setAppointments(data);
     } catch (err) {
       const apiError = err as ApiError;
+      console.error("Randevu yükleme hatası:", err);
       setError(apiError.message || "Randevular yüklenirken bir hata oluştu");
     } finally {
       setLoading(false);
@@ -74,15 +93,51 @@ const InstructorAppointmentManagement: React.FC = () => {
     );
   };
 
+  const loadSchedule = async () => {
+    try {
+      const schedule = await getMySchedule();
+      const slots = schedule.map((s) => s.slot);
+      setSelectedSlots(slots);
+    } catch (err) {
+      console.error("Ders programı yükleme hatası:", err);
+      // Hata olsa bile devam et, sadece boş liste ile başla
+    }
+  };
+
+  const handleSaveSchedule = async () => {
+    if (selectedSlots.length === 0) {
+      alert("Lütfen en az bir saat seçin.");
+      return;
+    }
+
+    setSavingSchedule(true);
+    try {
+      await saveSchedule(selectedSlots);
+      alert("Ders programı başarıyla kaydedildi!");
+    } catch (err: any) {
+      const apiError = err as ApiError;
+      alert(apiError.message || "Ders programı kaydedilirken bir hata oluştu");
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
+
   // Pending randevular (gelen talepler)
-  const pendingAppointments = appointments.filter(
-    (apt) => apt.status === "pending"
-  );
+  // Not: "requests" sekmesi için zaten pending-requests endpoint'i çağrılıyor,
+  // bu yüzden tüm appointments zaten pending. Ama yine de filtreleme yapalım güvenlik için.
+  const pendingAppointments = activeTab === "requests" 
+    ? appointments // pending-requests endpoint'i zaten sadece pending döndürüyor
+    : appointments.filter((apt) => apt.status?.toLowerCase() === "pending");
 
   // Approved randevular (onaylanmış randevular)
   const approvedAppointments = appointments.filter(
-    (apt) => apt.status === "approved"
+    (apt) => apt.status?.toLowerCase() === "approved"
   );
+  
+  // Debug: Randevuları console'a yazdır
+  console.log("Appointments state:", appointments);
+  console.log("Pending appointments:", pendingAppointments);
+  console.log("Active tab:", activeTab);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -157,17 +212,38 @@ const InstructorAppointmentManagement: React.FC = () => {
                         <div className="flex justify-between items-start mb-2">
                           <div>
                             <p className="font-semibold text-slate-900">
-                              {apt.course || "Ders belirtilmemiş"}
+                              {(apt as any).subject || apt.course || "Ders belirtilmemiş"}
                             </p>
                             <p className="text-sm text-slate-600 mt-1">
-                              {apt.reason}
+                              Öğrenci: {(apt as any).studentName || "Bilinmiyor"}
+                            </p>
+                            <p className="text-sm text-slate-600 mt-1">
+                              Sebep: {(() => {
+                                const reason = (apt as any).requestReason || apt.reason || "";
+                                const reasonLower = reason.toLowerCase().trim();
+                                
+                                // Eğer reason "question", "exam", "other" gibi enum değerleriyse Türkçe'ye çevir
+                                // Aksi halde öğrencinin yazdığı özel metni göster
+                                if (reasonLower === "question") {
+                                  return "Soru sorma";
+                                } else if (reasonLower === "exam") {
+                                  return "Sınav kağıdına bakma";
+                                } else if (reasonLower === "other") {
+                                  return "Diğer";
+                                } else if (reason.trim()) {
+                                  // Öğrencinin yazdığı özel metin (request_reason kolonundan gelen)
+                                  return reason;
+                                } else {
+                                  return "Sebep belirtilmemiş";
+                                }
+                              })()}
                             </p>
                             <p className="text-sm text-slate-600">
-                              {apt.date} - {apt.time}
+                              {apt.date ? new Date(apt.date).toLocaleDateString('tr-TR') : 'Tarih belirtilmemiş'} - {apt.time ? (typeof apt.time === 'string' ? apt.time : (typeof apt.time === 'object' && apt.time !== null ? `${String((apt.time as any).hours || 0).padStart(2, '0')}:${String((apt.time as any).minutes || 0).padStart(2, '0')}` : 'Saat belirtilmemiş')) : 'Saat belirtilmemiş'}
                             </p>
-                            {apt.note && (
-                              <p className="text-sm text-slate-500 mt-1 italic">
-                                Not: {apt.note}
+                            {(apt as any).rejectionReason && (
+                              <p className="text-sm text-red-500 mt-1 italic">
+                                Red Nedeni: {(apt as any).rejectionReason}
                               </p>
                             )}
                           </div>
@@ -232,9 +308,18 @@ const InstructorAppointmentManagement: React.FC = () => {
 
           {/* SAĞ TARAF – DERS PROGRAMI */}
           <section className="lg:col-span-2 bg-white rounded-xl border p-4 shadow">
-            <h2 className="text-sm font-semibold mb-3 text-center">
-              Haftalık Ders Programı
-            </h2>
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-sm font-semibold">
+                Haftalık Ders Programı
+              </h2>
+              <button
+                onClick={handleSaveSchedule}
+                disabled={savingSchedule}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-[#d71920] rounded hover:bg-[#b8151a] disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {savingSchedule ? "Kaydediliyor..." : "Kaydet"}
+              </button>
+            </div>
 
             <div className="grid grid-cols-6 text-xs gap-1">
               <div />

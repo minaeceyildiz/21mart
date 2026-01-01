@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { logout, getCurrentUser } from "../services/authService";
+import NotificationBell from "../components/NotificationBell";
 
 const InstructorDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ const InstructorDashboard: React.FC = () => {
             <span className="text-sm">
               Hoş geldiniz, {user?.name || "Öğretim Elemanı"}
             </span>
+            <NotificationBell />
             <button
               onClick={openLogoutModal}
               className="hover:underline text-sm"
