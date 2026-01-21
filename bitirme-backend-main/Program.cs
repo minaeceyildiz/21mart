@@ -127,6 +127,7 @@ try
     builder.Services.AddScoped<INotificationService, NotificationService>();
     builder.Services.AddScoped<IAppointmentService, AppointmentService>();
     builder.Services.AddScoped<IAuthService, AuthService>();
+    builder.Services.AddScoped<IEmailService, EmailService>(); // Email Service eklendi
     builder.Services.AddScoped<ICafeService, CafeService>();
     builder.Services.AddScoped<ScheduleService>();
 

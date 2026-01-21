@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { login, register, ApiError } from "../services/authService";
 
@@ -10,12 +10,36 @@ const LoginPage: React.FC = () => {
   const [role, setRole] = useState<"student" | "instructor">("student");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [showError, setShowError] = useState(false);
+  const [success, setSuccess] = useState<string>("");
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const [isSignup, setIsSignup] = useState(false);
+
+  // Hata mesajı gösterildiğinde animasyon için
+  useEffect(() => {
+    if (error) {
+      setShowError(true);
+      setShowSuccess(false);
+      setSuccess("");
+    }
+  }, [error]);
+
+  // Başarı mesajı gösterildiğinde animasyon için
+  useEffect(() => {
+    if (success) {
+      setShowSuccess(true);
+      setShowError(false);
+      setError("");
+    }
+  }, [success]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
+    setShowError(false);
+    setShowSuccess(false);
     setLoading(true);
 
     try {
@@ -28,7 +52,7 @@ const LoginPage: React.FC = () => {
       // Backend'den gelen role değerini kullan (normalizedRole: 'student' veya 'instructor')
       const userRole = response.user.role;
       console.log('Navigating with role:', userRole); // Debug için
-      
+
       if (userRole === "student") {
         console.log('Navigating to /ogrenci'); // Debug için
         navigate("/ogrenci", { replace: true });
@@ -55,6 +79,9 @@ const LoginPage: React.FC = () => {
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
+    setShowError(false);
+    setShowSuccess(false);
     setLoading(true);
 
     try {
@@ -72,13 +99,23 @@ const LoginPage: React.FC = () => {
       });
 
       console.log('Register response:', response); // Debug için
+
+      // KONTROL: Token yoksa (Email doğrulama gerekli) yönlendirme YAPMA
+      if (!response.token) {
+        setSuccess("Kayıt başarılı! 🎉\n\nE-posta adresinize bir doğrulama linki gönderdik. Lütfen e-postanızı kontrol edin ve doğrulama linkine tıklayın.\n\nE-postayı bulamıyorsanız spam klasörünü kontrol etmeyi unutmayın.");
+        setIsSignup(false);
+        setUsername("");
+        setPassword("");
+        return; // Fonksiyondan çık, yönlendirme yapma
+      }
+
       console.log('User role:', response.user.role); // Debug için
 
       // Kayıt sonrası role göre yönlendir
       // Backend'den gelen role değerini kullan (normalizedRole: 'student' veya 'instructor')
       const userRole = response.user.role;
       console.log('Navigating with role (register):', userRole); // Debug için
-      
+
       if (userRole === "student") {
         console.log('Navigating to /ogrenci (register)'); // Debug için
         navigate("/ogrenci", { replace: true });
@@ -112,9 +149,69 @@ const LoginPage: React.FC = () => {
           {isSignup ? "Başkent Yaşam Kayıt" : "Başkent Yaşam Giriş"}
         </h1>
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
+        {/* Başarı Mesajı */}
+        {success && showSuccess && (
+          <div 
+            className="bg-green-50 border-l-4 border-green-500 text-green-800 px-5 py-4 rounded-lg shadow-lg relative transition-all duration-300 ease-out"
+            style={{
+              animation: 'slideDown 0.3s ease-out',
+              minHeight: '80px'
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1">
+                <span className="text-2xl flex-shrink-0 mt-1">✅</span>
+                <div className="flex-1">
+                  <p className="font-bold text-base mb-2 text-green-900">Başarılı!</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-line text-green-700">{success}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSuccess(false);
+                  setTimeout(() => setSuccess(""), 300);
+                }}
+                className="text-green-400 hover:text-green-700 hover:bg-green-100 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 transition-colors duration-200"
+                aria-label="Kapat"
+                title="Kapat"
+              >
+                <span className="text-xl font-bold leading-none">×</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Hata Mesajı */}
+        {error && showError && (
+          <div 
+            className="bg-red-50 border-l-4 border-red-500 text-red-800 px-5 py-4 rounded-lg shadow-lg relative transition-all duration-300 ease-out"
+            style={{
+              animation: 'slideDown 0.3s ease-out',
+              minHeight: '80px'
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 flex-1">
+                <span className="text-2xl flex-shrink-0 mt-1">⚠️</span>
+                <div className="flex-1">
+                  <p className="font-bold text-base mb-2 text-red-900">Dikkat!</p>
+                  <p className="text-sm leading-relaxed whitespace-pre-line text-red-700">{error}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowError(false);
+                  setTimeout(() => setError(""), 300);
+                }}
+                className="text-red-400 hover:text-red-700 hover:bg-red-100 rounded-full w-6 h-6 flex items-center justify-center flex-shrink-0 transition-colors duration-200"
+                aria-label="Kapat"
+                title="Kapat"
+              >
+                <span className="text-xl font-bold leading-none">×</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -122,7 +219,19 @@ const LoginPage: React.FC = () => {
           type="text"
           placeholder={isSignup ? "Kullanıcı adı" : "Kullanıcı adı"}
           value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setUsername(val);
+            // Akıllı rol seçimi (Sadece kayıt olurken)
+            if (isSignup && val.length > 0) {
+              // Rakamla başlıyorsa -> Öğrenci, yoksa -> Akademik
+              if (/^\d/.test(val)) {
+                setRole("student");
+              } else {
+                setRole("instructor");
+              }
+            }
+          }}
           className="border rounded-lg px-4 py-2"
         />
 
@@ -142,7 +251,11 @@ const LoginPage: React.FC = () => {
           <option value="student">Öğrenci</option>
           <option value="instructor">Akademik Personel</option>
         </select>
-
+         <div className="text-right mt-2">
+          <span className="text-sm text-blue-600 cursor-pointer hover:underline">
+           Şifremi Unuttum
+          </span>
+         </div>
         <button
           type="submit"
           disabled={loading}
@@ -153,8 +266,8 @@ const LoginPage: React.FC = () => {
               ? "Kayıt yapılıyor..."
               : "Giriş yapılıyor..."
             : isSignup
-            ? "Kayıt ol"
-            : "Giriş yap"}
+              ? "Kayıt ol"
+              : "Giriş yap"}
         </button>
 
         <p className="text-center text-sm text-slate-500">
@@ -163,7 +276,13 @@ const LoginPage: React.FC = () => {
               Hesabınız var mı?{" "}
               <button
                 type="button"
-                onClick={() => setIsSignup(false)}
+                onClick={() => {
+                  setIsSignup(false);
+                  setError("");
+                  setSuccess("");
+                  setShowError(false);
+                  setShowSuccess(false);
+                }}
                 className="underline text-[#d71920]"
               >
                 Giriş yap
@@ -174,7 +293,13 @@ const LoginPage: React.FC = () => {
               Hesabınız yok mu?{" "}
               <button
                 type="button"
-                onClick={() => setIsSignup(true)}
+                onClick={() => {
+                  setIsSignup(true);
+                  setError("");
+                  setSuccess("");
+                  setShowError(false);
+                  setShowSuccess(false);
+                }}
                 className="underline text-[#d71920]"
               >
                 Kayıt ol

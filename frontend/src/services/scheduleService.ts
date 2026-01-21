@@ -46,3 +46,13 @@ export const saveSchedule = async (slots: string[]): Promise<void> => {
   }
 };
 
+export const getInstructorSchedule = async (instructorId: number): Promise<ScheduleSlot[]> => {
+  try {
+    const response = await apiClient.get<ScheduleSlot[]>(`/Schedule/instructor/${instructorId}`);
+    return response.data;
+  } catch (error: any) {
+    console.error('Error fetching instructor schedule:', error);
+    return [];
+  }
+};
+

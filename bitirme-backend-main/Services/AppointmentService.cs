@@ -23,11 +23,13 @@ public class AppointmentService : IAppointmentService
 {
     private readonly AppDbContext _context;
     private readonly INotificationService _notificationService;
+    private readonly ScheduleService _scheduleService;
 
-    public AppointmentService(AppDbContext context, INotificationService notificationService)
+    public AppointmentService(AppDbContext context, INotificationService notificationService, ScheduleService scheduleService)
     {
         _context = context;
         _notificationService = notificationService;
+        _scheduleService = scheduleService;
     }
 
     public async Task<List<Appointment>> GetAllAppointmentsAsync()
@@ -217,6 +219,13 @@ public class AppointmentService : IAppointmentService
         // Date ve Time'ı birleştirerek scheduled_at oluştur
         var scheduledAt = dto.Date.Date.Add(dto.Time);
         
+        // 2. Müsaitlik kontrolü (ScheduleService)
+        var isAvailable = await _scheduleService.IsTimeSlotAvailableAsync(teacher.Id, dto.Date, dto.Time);
+        if (!isAvailable)
+        {
+            throw new InvalidOperationException("Seçilen tarih ve saat için öğretim elemanının müsaitliği bulunmamaktadır. Lütfen başka bir saat veya gün seçiniz.");
+        }
+        
         Appointment appointment;
         
         try
@@ -261,52 +270,14 @@ public class AppointmentService : IAppointmentService
             int newId;
             try
             {
-                // Önce request_reason kolonunun var olup olmadığını kontrol et
-                bool hasRequestReasonColumn = false;
-                try
-                {
-                    using var checkCommand = connection.CreateCommand();
-                    checkCommand.CommandText = @"
-                        SELECT EXISTS (
-                            SELECT 1 
-                            FROM information_schema.columns 
-                            WHERE table_name = 'appointments' 
-                            AND column_name = 'request_reason'
-                        );
-                    ";
-                    var columnExists = await checkCommand.ExecuteScalarAsync();
-                    hasRequestReasonColumn = columnExists != null && Convert.ToBoolean(columnExists);
-                }
-                catch
-                {
-                    // Kolon kontrolü başarısız olursa, kolon yok kabul et
-                    hasRequestReasonColumn = false;
-                }
-                
                 // reason (enum) ve request_reason (text) kolonlarını birlikte kaydet
-                // Eğer request_reason kolonu yoksa, INSERT'ten çıkar
-                string insertSql;
-                if (hasRequestReasonColumn)
-                {
-                    insertSql = $@"
-                        INSERT INTO ""appointments"" 
-                        (""student_id"", ""instructor_id"", ""course_name"", ""reason"", ""request_reason"", ""status"", ""scheduled_at"", ""created_at"")
-                        VALUES 
-                        ({studentId}, {teacher.Id}, '{subjectEscaped}', '{reasonValue}'::appointment_reason, '{originalReasonEscaped}', '{statusValue}'::appointment_status, '{scheduledAtFormatted}'::timestamp, NOW())
-                        RETURNING ""id"";
-                    ";
-                }
-                else
-                {
-                    // request_reason kolonu yoksa, sadece reason enum kolonunu kullan
-                    insertSql = $@"
-                        INSERT INTO ""appointments"" 
-                        (""student_id"", ""instructor_id"", ""course_name"", ""reason"", ""status"", ""scheduled_at"", ""created_at"")
-                        VALUES 
-                        ({studentId}, {teacher.Id}, '{subjectEscaped}', '{reasonValue}'::appointment_reason, '{statusValue}'::appointment_status, '{scheduledAtFormatted}'::timestamp, NOW())
-                        RETURNING ""id"";
-                    ";
-                }
+                string insertSql = $@"
+                    INSERT INTO ""appointments"" 
+                    (""student_id"", ""instructor_id"", ""course_name"", ""reason"", ""request_reason"", ""status"", ""scheduled_at"", ""created_at"")
+                    VALUES 
+                    ({studentId}, {teacher.Id}, '{subjectEscaped}', '{reasonValue}'::appointment_reason, '{originalReasonEscaped}', '{statusValue}'::appointment_status, '{scheduledAtFormatted}'::timestamp, NOW())
+                    RETURNING ""id"";
+                ";
                 
                 using var command = connection.CreateCommand();
                 command.CommandText = insertSql;
@@ -719,49 +690,54 @@ public class AppointmentService : IAppointmentService
             
             // RequestReason'ı request_reason kolonundan oku (öğrencinin yazdığı özel metin)
             // Eğer kolon yoksa veya değer yoksa, reason enum kolonundan oku
-            try
+            // RequestReason'ı request_reason kolonundan oku (öğrencinin yazdığı özel metin)
+            // Eğer zaten doluysa (EF Core ile geldiyse) ve "other" değilse tekrar okuma
+            if (string.IsNullOrWhiteSpace(appointment.RequestReason) || appointment.RequestReason == "other")
             {
-                using var reasonCommand = connection.CreateCommand();
-                reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                var reasonResult = await reasonCommand.ExecuteScalarAsync();
-                if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
+                try
                 {
-                    var reasonText = reasonResult.ToString();
-                    if (!string.IsNullOrWhiteSpace(reasonText))
+                    using var reasonCommand = connection.CreateCommand();
+                    reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                    var reasonResult = await reasonCommand.ExecuteScalarAsync();
+                    if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
                     {
-                        appointment.RequestReason = reasonText;
+                        var reasonText = reasonResult.ToString();
+                        if (!string.IsNullOrWhiteSpace(reasonText))
+                        {
+                            appointment.RequestReason = reasonText;
+                        }
+                        else
+                        {
+                            // request_reason boşsa, reason enum kolonundan oku
+                            using var enumCommand = connection.CreateCommand();
+                            enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                            var enumResult = await enumCommand.ExecuteScalarAsync();
+                            appointment.RequestReason = enumResult?.ToString() ?? "other";
+                        }
                     }
                     else
                     {
-                        // request_reason boşsa, reason enum kolonundan oku
+                        // request_reason null ise, reason enum kolonundan oku
                         using var enumCommand = connection.CreateCommand();
                         enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
                         var enumResult = await enumCommand.ExecuteScalarAsync();
                         appointment.RequestReason = enumResult?.ToString() ?? "other";
                     }
                 }
-                else
-                {
-                    // request_reason null ise, reason enum kolonundan oku
-                    using var enumCommand = connection.CreateCommand();
-                    enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                    var enumResult = await enumCommand.ExecuteScalarAsync();
-                    appointment.RequestReason = enumResult?.ToString() ?? "other";
-                }
-            }
-            catch
-            {
-                // request_reason kolonu yoksa veya hata olursa, reason enum kolonundan oku
-                try
-                {
-                    using var enumCommand = connection.CreateCommand();
-                    enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                    var enumResult = await enumCommand.ExecuteScalarAsync();
-                    appointment.RequestReason = enumResult?.ToString() ?? "other";
-                }
                 catch
                 {
-                    appointment.RequestReason = "other";
+                    // request_reason kolonu yoksa veya hata olursa, reason enum kolonundan oku
+                    try
+                    {
+                        using var enumCommand = connection.CreateCommand();
+                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                        var enumResult = await enumCommand.ExecuteScalarAsync();
+                        appointment.RequestReason = enumResult?.ToString() ?? "other";
+                    }
+                    catch
+                    {
+                        appointment.RequestReason = "other";
+                    }
                 }
             }
         }

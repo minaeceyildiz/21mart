@@ -46,8 +46,8 @@ namespace ApiProject.Data
                 entity.Property(e => e.Email).HasColumnName("email");
                 entity.Property(e => e.PasswordHash).HasColumnName("password_hash");
                 entity.Property(e => e.StudentNo).HasColumnName("staff_id");
-                // login_type kolonu veritabanında özel bir tip (login_type ENUM) olduğu için mapping'den çıkarıyoruz
-                // Yeni kullanıcı kaydında bu kolonu kullanmıyoruz
+                // login_type kolonu PostgreSQL ENUM tipi olduğu için Entity Framework ile uyumsuz
+                // Bu alanı ignore edip, ham SQL ile güncelleyeceğiz
                 entity.Ignore(e => e.LoginType);
             });
 

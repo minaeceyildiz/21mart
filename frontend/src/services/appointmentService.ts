@@ -42,6 +42,22 @@ export interface ApiError {
   status?: number;
 }
 
+// Helper to map backend DTO to frontend Appointment interface
+const mapDtoToAppointment = (dto: any): Appointment => {
+  return {
+    ...dto,
+    // Handle both camelCase and PascalCase from backend
+    reason: dto.requestReason || dto.RequestReason || dto.reason || '',
+    course: dto.subject || dto.Subject || dto.course || '',
+    note: dto.note || dto.rejectionReason || dto.RejectionReason,
+    studentName: dto.studentName || dto.StudentName,
+    teacherName: dto.teacherName || dto.TeacherName,
+    date: dto.date || dto.Date,
+    time: dto.time || dto.Time,
+    status: dto.status || dto.Status,
+  };
+};
+
 // Randevu oluştur
 export const createAppointment = async (
   appointment: AppointmentRequest
@@ -49,7 +65,7 @@ export const createAppointment = async (
   try {
     // Backend endpoint'i /Appointment (tekil, büyük A ile başlıyor)
     // Backend'in beklediği formata dönüştür
-    
+
     // Date ve time'ı birleştir (ISO format)
     let isoDateTime = '';
     if (appointment.date && appointment.time) {
@@ -89,7 +105,7 @@ export const createAppointment = async (
     // studentId göndermemize gerek yok, JWT token'dan otomatik alınıyor
     // teacherName kullanıyoruz (formdan gelen lecturerName)
     const teacherNameValue = appointment.lecturerName.trim();
-    
+
     if (!teacherNameValue) {
       throw {
         message: 'Öğretim elemanı adı boş olamaz',
@@ -108,14 +124,14 @@ export const createAppointment = async (
     console.log('Lecturer name:', appointment.lecturerName);
     console.log('Backend request body:', JSON.stringify(backendRequest, null, 2)); // Debug için - detaylı göster
 
-    const response = await apiClient.post<Appointment>('/Appointment', backendRequest);
-    return response.data;
+    const response = await apiClient.post<any>('/Appointment', backendRequest);
+    return mapDtoToAppointment(response.data);
   } catch (error: any) {
     console.error('Create appointment error:', error.response?.data); // Debug için
-    
+
     // Backend validation hatalarını parse et
     let errorMessage = error.response?.data?.title || error.response?.data?.message || 'Randevu oluşturulurken bir hata oluştu';
-    
+
     // 500 hatası için daha detaylı mesaj
     if (error.response?.status === 500) {
       const detailMessage = error.response?.data?.message || error.response?.data?.detail || '';
@@ -135,14 +151,14 @@ export const createAppointment = async (
           });
         }
       });
-      
+
       if (validationErrors.length > 0) {
         errorMessage = `Validation hataları:\n${validationErrors.join('\n')}`;
       }
     } else if (error.response?.data?.message) {
       errorMessage = error.response.data.message;
     }
-    
+
     throw {
       message: errorMessage,
       status: error.response?.status,
@@ -154,8 +170,8 @@ export const createAppointment = async (
 export const getStudentAppointments = async (): Promise<Appointment[]> => {
   try {
     // Backend'de my-appointments endpoint'i var
-    const response = await apiClient.get<Appointment[]>('/Appointment/my-appointments');
-    return response.data;
+    const response = await apiClient.get<any[]>('/Appointment/my-appointments');
+    return response.data.map(mapDtoToAppointment);
   } catch (error: any) {
     throw {
       message: error.response?.data?.message || 'Randevular yüklenirken bir hata oluştu',
@@ -168,8 +184,8 @@ export const getStudentAppointments = async (): Promise<Appointment[]> => {
 export const getInstructorAppointments = async (): Promise<Appointment[]> => {
   try {
     // Backend'de my-appointments endpoint'i var (hem öğrenci hem öğretim elemanı için)
-    const response = await apiClient.get<Appointment[]>('/Appointment/my-appointments');
-    return response.data;
+    const response = await apiClient.get<any[]>('/Appointment/my-appointments');
+    return response.data.map(mapDtoToAppointment);
   } catch (error: any) {
     throw {
       message: error.response?.data?.message || 'Randevular yüklenirken bir hata oluştu',
@@ -182,8 +198,8 @@ export const getInstructorAppointments = async (): Promise<Appointment[]> => {
 export const getPendingRequests = async (): Promise<Appointment[]> => {
   try {
     // Backend'de pending-requests endpoint'i var (sadece öğretim elemanı için)
-    const response = await apiClient.get<Appointment[]>('/Appointment/pending-requests');
-    return response.data;
+    const response = await apiClient.get<any[]>('/Appointment/pending-requests');
+    return response.data.map(mapDtoToAppointment);
   } catch (error: any) {
     throw {
       message: error.response?.data?.message || 'Bekleyen randevu talepleri yüklenirken bir hata oluştu',
@@ -202,9 +218,9 @@ export const updateAppointmentStatus = async (
   try {
     // Backend'de PUT /api/Appointment/{id} kullanılıyor
     // Backend tüm appointment bilgilerini bekliyor (date, time, subject, status)
-    
+
     let updateData: any;
-    
+
     if (appointment) {
       // Mevcut appointment bilgilerini kullan
       // Date'i ISO formatına çevir
@@ -213,20 +229,20 @@ export const updateAppointmentStatus = async (
         // Eğer sadece tarih varsa, time ile birleştir
         isoDate = `${appointment.date}T${appointment.time}:00.000Z`;
       }
-      
+
       // Backend artık time'ı string formatında ("HH:mm") kabul ediyor
       const timeString = appointment.time; // Zaten "HH:mm" formatında
-      
+
       // Status'u number'a çevir (0: pending, 1: approved, 2: rejected gibi)
       const statusNumber = status === 'approved' ? 1 : status === 'rejected' ? 2 : 0;
-      
+
       updateData = {
         date: isoDate,
         time: timeString, // String format: "HH:mm" (örn: "14:30")
         subject: appointment.course || '', // Backend'de subject, frontend'de course
         status: statusNumber,
       };
-      
+
       if (status === 'rejected' && rejectionReason) {
         updateData.rejectionReason = rejectionReason;
       }
@@ -240,9 +256,9 @@ export const updateAppointmentStatus = async (
         updateData.rejectionReason = rejectionReason;
       }
     }
-    
-    const response = await apiClient.put<Appointment>(`/Appointment/${appointmentId}`, updateData);
-    return response.data;
+
+    const response = await apiClient.put<any>(`/Appointment/${appointmentId}`, updateData);
+    return mapDtoToAppointment(response.data);
   } catch (error: any) {
     console.error('Update appointment error:', error.response?.data);
     throw {

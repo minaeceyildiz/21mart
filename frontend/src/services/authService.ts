@@ -56,25 +56,25 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
 
     // Backend endpoint'i /Auth/login (büyük harf ile)
     const response = await apiClient.post<BackendLoginResponse>('/Auth/login', requestBody);
-    
+
     // Backend'den gelen response'u frontend formatına dönüştür
     const backendData = response.data;
-    
+
     console.log('Backend role:', backendData.role); // Debug için
-    
+
     // Role'ü küçük harfe çevir ve normalize et
     // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
     const roleLower = (backendData.role || '').toLowerCase();
     let normalizedRole: 'student' | 'instructor';
-    
+
     if (roleLower === 'teacher' || roleLower === 'instructor') {
       normalizedRole = 'instructor';
     } else {
       normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
     }
-    
+
     console.log('Normalized role:', normalizedRole); // Debug için
-    
+
     // Frontend formatına dönüştür
     const loginResponse: LoginResponse = {
       token: backendData.token,
@@ -85,18 +85,36 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
         name: backendData.name,
       },
     };
-    
+
     // Token ve kullanıcı bilgilerini localStorage'a kaydet
     if (loginResponse.token) {
       localStorage.setItem('token', loginResponse.token);
       localStorage.setItem('user', JSON.stringify(loginResponse.user));
     }
-    
+
     return loginResponse;
   } catch (error: any) {
     console.error('Login error:', error.response?.data); // Debug için
+    
+    // E-posta doğrulama hatası için özel mesaj
+    const errorMessage = error.response?.data?.message || error.response?.data?.error;
+    
+    let displayMessage = 'Giriş yapılırken bir hata oluştu.';
+    
+    if (errorMessage) {
+      if (errorMessage.includes('mail') || errorMessage.includes('doğrula')) {
+        displayMessage = errorMessage + '\n\nLütfen e-posta kutunuzu kontrol edin ve doğrulama linkine tıklayın. E-postayı bulamıyorsanız spam klasörünü kontrol edin.';
+      } else if (errorMessage.includes('şifre') || errorMessage.includes('password')) {
+        displayMessage = 'Kullanıcı adı veya şifre hatalı. Lütfen bilgilerinizi kontrol edip tekrar deneyin.';
+      } else if (errorMessage.includes('rol')) {
+        displayMessage = errorMessage + '\n\nLütfen doğru rol seçimi yaptığınızdan emin olun.';
+      } else {
+        displayMessage = errorMessage;
+      }
+    }
+    
     throw {
-      message: error.response?.data?.message || error.response?.data?.error || 'Giriş yapılırken bir hata oluştu',
+      message: displayMessage,
       status: error.response?.status,
     } as ApiError;
   }
@@ -104,6 +122,9 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
 
 // Kayıt işlemi
 export const register = async (payload: RegisterRequest): Promise<LoginResponse> => {
+  // Kayıt işleminden önce varsa eski oturumu kapat
+  logout();
+
   try {
     const requestBody = {
       name: payload.name,
@@ -122,13 +143,13 @@ export const register = async (payload: RegisterRequest): Promise<LoginResponse>
     // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
     const roleLower = (backendData.role || '').toLowerCase();
     let normalizedRole: 'student' | 'instructor';
-    
+
     if (roleLower === 'teacher' || roleLower === 'instructor') {
       normalizedRole = 'instructor';
     } else {
       normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
     }
-    
+
     console.log('Normalized role (register):', normalizedRole); // Debug için
 
     const loginResponse: LoginResponse = {
@@ -150,8 +171,23 @@ export const register = async (payload: RegisterRequest): Promise<LoginResponse>
     return loginResponse;
   } catch (error: any) {
     console.error('Register error:', error.response?.data);
+    
+    const errorMessage = error.response?.data?.message || error.response?.data?.error;
+    
+    let displayMessage = 'Kayıt yapılırken bir hata oluştu. Lütfen bilgilerinizi kontrol edip tekrar deneyin.';
+    
+    if (errorMessage) {
+      if (errorMessage.includes('kullanılıyor') || errorMessage.includes('zaten')) {
+        displayMessage = errorMessage + '\n\nFarklı bir kullanıcı adı veya e-posta adresi deneyin.';
+      } else if (errorMessage.includes('Email') || errorMessage.includes('SMTP')) {
+        displayMessage = 'E-posta gönderilemedi. Lütfen e-posta adresinizi kontrol edin veya daha sonra tekrar deneyin.';
+      } else {
+        displayMessage = errorMessage;
+      }
+    }
+    
     throw {
-      message: error.response?.data?.message || error.response?.data?.error || 'Kayıt yapılırken bir hata oluştu',
+      message: displayMessage,
       status: error.response?.status,
     } as ApiError;
   }

@@ -1,12 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { createAppointment, getStudentAppointments, Appointment, ApiError } from "../services/appointmentService";
+import { Link } from "react-router-dom";
+import {
+  createAppointment,
+  getStudentAppointments,
+  Appointment,
+  ApiError,
+} from "../services/appointmentService";
 import { getTeachers, Teacher } from "../services/teacherService";
+import { getInstructorSchedule, ScheduleSlot } from "../services/scheduleService";
 
 type Reason = "question" | "exam" | "other";
+type TabType = "request" | "myAppointments";
 
 const TeacherAppointmentPage: React.FC = () => {
-  const navigate = useNavigate();
+
+
+  const [activeTab, setActiveTab] = useState<TabType>("request");
+
   const [lecturerName, setLecturerName] = useState("");
   const [course, setCourse] = useState("");
   const [reason, setReason] = useState<Reason>("question");
@@ -14,50 +24,148 @@ const TeacherAppointmentPage: React.FC = () => {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [note, setNote] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loadingTeachers, setLoadingTeachers] = useState(false);
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [loadingAppointments, setLoadingAppointments] = useState(false);
 
-  // Öğretmen listesini yükle
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleSlot[]>([]);
+
+  const [loading, setLoading] = useState(false);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+  const [error, setError] = useState("");
+
+  // Sabit saat listesi (09:00 - 17:00, 30dk ara ile)
+  const ALL_TIME_SLOTS = [
+    "09:00", "09:30", "10:00", "10:30", "11:00", "11:30",
+    "12:00", "12:30", "13:00", "13:30", "14:00", "14:30",
+    "15:00", "15:30", "16:00", "16:30"
+  ];
+
+  /* ============================
+     DATA LOAD
+  ============================ */
   useEffect(() => {
     const loadTeachers = async () => {
-      setLoadingTeachers(true);
+
       try {
         const data = await getTeachers();
         setTeachers(data);
       } catch (err) {
-        console.error("Öğretmenler yüklenirken hata:", err);
-        // Hata olsa bile devam et, manuel giriş yapılabilir
+        console.error("Öğretmen yükleme hatası:", err);
       } finally {
-        setLoadingTeachers(false);
+
       }
     };
     loadTeachers();
   }, []);
 
-  // Randevuları yükle
+  const loadAppointments = async () => {
+    setLoadingAppointments(true);
+    try {
+      const data = await getStudentAppointments();
+      setAppointments(
+        data.filter(
+          (a) =>
+            a.status?.toLowerCase() === "approved" ||
+            a.status?.toLowerCase() === "rejected"
+        )
+      );
+    } catch (err) {
+      console.error("Randevu yükleme hatası:", err);
+    } finally {
+      setLoadingAppointments(false);
+    }
+  };
+
   useEffect(() => {
-    const loadAppointments = async () => {
-      setLoadingAppointments(true);
-      try {
-        const data = await getStudentAppointments();
-        // Sadece onaylanan ve reddedilen randevuları göster
-        const filteredData = data.filter(
-          (apt) => apt.status?.toLowerCase() === "approved" || apt.status?.toLowerCase() === "rejected"
-        );
-        setAppointments(filteredData);
-      } catch (err) {
-        console.error("Randevular yüklenirken hata:", err);
-      } finally {
-        setLoadingAppointments(false);
-      }
-    };
     loadAppointments();
   }, []);
 
+  // Öğretmen seçildiğinde schedule'ı yükle
+  useEffect(() => {
+    const fetchSchedule = async () => {
+      if (lecturerName && teachers.length > 0) {
+        const teacher = teachers.find((t) => t.name === lecturerName);
+        if (teacher) {
+          try {
+            const data = await getInstructorSchedule(teacher.id);
+            setSchedule(data);
+          } catch (err) {
+            console.error("Schedule loading error:", err);
+          }
+        }
+      } else {
+        setSchedule([]);
+      }
+    };
+    fetchSchedule();
+  }, [lecturerName, teachers]);
+
+  // Tarih değiştiğinde saati sıfırla (seçilen saat artık müsait olmayabilir)
+  useEffect(() => {
+    setTime("");
+  }, [date, lecturerName]);
+
+  // Seçilen tarih için müsait saatleri hesapla
+  const getAvailableTimes = () => {
+    // Tarih seçili değilse boş dön
+    if (!date) return [];
+
+    // Eğer schedule henüz yüklenmediyse veya boşsa, tüm saatler müsaittir (varsayım)
+    if (!schedule || schedule.length === 0) return ALL_TIME_SLOTS;
+
+    const dateObj = new Date(date);
+    const day = dateObj.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+
+    // Haftasonu ise (0 veya 6), boş dön
+    if (day === 0 || day === 6) return [];
+
+    // O güne ait DOLU slotları (hocanın derslerini) bul
+    // Format: "09:00" string'i
+    const busyStarts = schedule
+      .filter((s) => s.dayOfWeek === day)
+      .map(s => s.startTime);
+
+    // Dersler 50 dk olduğu için, başlangıç saati VE bir sonraki 30 dk'lık dilim doludur.
+    // Örn: 09:00 dersi -> 09:00 ve 09:30 slotlarını kapatır.
+    const allBusySlots: string[] = [];
+
+    busyStarts.forEach((start) => {
+      allBusySlots.push(start);
+      // Bir sonraki 30 dk slotunu bul
+      const parts = start.split(":");
+      if (parts.length === 2) {
+        let h = parseInt(parts[0]);
+        let m = parseInt(parts[1]);
+
+        // 30 dk ekle
+        m += 30;
+        if (m >= 60) {
+          m -= 60;
+          h += 1;
+        }
+
+        const nextSlot = `${String(h).padStart(2, "0")}:${String(m).padStart(
+          2,
+          "0"
+        )}`;
+        allBusySlots.push(nextSlot);
+      }
+    });
+
+    // Tüm saatlerden dolu olanları çıkar
+    // Dolu olmayanlar = Müsait olanlar
+    const freeSlots = ALL_TIME_SLOTS.filter(
+      (slot) => !allBusySlots.includes(slot)
+    );
+
+    return freeSlots;
+  };
+
+  const availableTimes = getAvailableTimes();
+
+  /* ============================
+     SUBMIT
+  ============================ */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -68,57 +176,9 @@ const TeacherAppointmentPage: React.FC = () => {
         reason === "other"
           ? otherReason
           : reason === "question"
-          ? "Soru sorma"
-          : "Sınav kağıdına bakma";
+            ? "Soru sorma"
+            : "Sınav kağıdına bakma";
 
-      // Token kontrolü
-      const token = localStorage.getItem("token");
-      if (!token) {
-        throw {
-          message: "Oturum süreniz dolmuş. Lütfen tekrar giriş yapın.",
-        } as ApiError;
-      }
-
-      // Saat validation: 09:00-17:00 arası ve 30 dk aralıklarla (17:00 dahil)
-      if (!time) {
-        setError("Lütfen bir saat seçin.");
-        setLoading(false);
-        return;
-      }
-
-      const [hourStr, minuteStr] = time.split(":");
-      const hour = parseInt(hourStr, 10);
-      const minute = parseInt(minuteStr, 10);
-
-      // 09:00-17:00 arası kontrol (17:00 dahil)
-      if (hour < 9 || hour > 17) {
-        setError(
-          "Lütfen 09:00 ile 17:00 arasında bir saat seçin."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // 17:00'dan sonraki saatler kontrolü
-      if (hour === 17 && minute > 0) {
-        setError(
-          "Lütfen 17:00'a kadar bir saat seçin."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // 30 dakika aralıklarla kontrol (00 veya 30)
-      if (minute !== 0 && minute !== 30) {
-        setError(
-          "Lütfen 30 dakika aralıklarla bir saat seçin (örn: 09:00, 09:30, 10:00)."
-        );
-        setLoading(false);
-        return;
-      }
-
-      // Backend artık studentId'yi JWT token'dan otomatik alıyor
-      // teacherName gönderiyoruz (formdan gelen lecturerName)
       await createAppointment({
         lecturerName,
         course,
@@ -128,9 +188,8 @@ const TeacherAppointmentPage: React.FC = () => {
         note: note || undefined,
       });
 
-      alert("Randevu talebiniz başarıyla oluşturuldu!");
+      alert("Randevu talebiniz başarıyla oluşturuldu.");
 
-      // Formu temizle
       setLecturerName("");
       setCourse("");
       setReason("question");
@@ -139,276 +198,247 @@ const TeacherAppointmentPage: React.FC = () => {
       setTime("");
       setNote("");
 
-      // Randevuları yenile
-      const data = await getStudentAppointments();
-      const filteredData = data.filter(
-        (apt) => apt.status?.toLowerCase() === "approved" || apt.status?.toLowerCase() === "rejected"
-      );
-      setAppointments(filteredData);
-
-      // Öğrenci dashboard'una dön
-      navigate("/ogrenci");
+      await loadAppointments();
+      setActiveTab("myAppointments");
     } catch (err) {
       const apiError = err as ApiError;
-      // Hata mesajını göster (validation hataları için)
-      const errorMsg =
-        apiError.message || "Randevu oluşturulurken bir hata oluştu";
-      setError(errorMsg);
-      console.error("Randevu oluşturma hatası:", errorMsg);
+      setError(apiError.message || "Randevu oluşturulurken hata oluştu");
     } finally {
       setLoading(false);
     }
   };
 
-  const isOtherSelected = reason === "other";
-
+  /* ============================
+     UI
+  ============================ */
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      {/* Üst bar */}
+      {/* ÜST BAR */}
       <header className="w-full border-b bg-[#d71920] text-white">
-        <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
+        <div className="max-w-6xl mx-auto px-6 py-6 flex justify-between">
           <h1 className="text-2xl font-semibold">Öğretim Elemanıyla Görüşme</h1>
-          <Link to="/ogrenci" className="text-sm underline hover:opacity-90">
+          <Link to="/ogrenci" className="underline text-sm">
             Öğrenci anasayfasına dön
           </Link>
         </div>
       </header>
 
-      {/* İçerik */}
-      <main className="flex-1 px-4 py-8">
-        <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Sol taraf - Form */}
-          <div className="lg:col-span-2">
-            <form
-              onSubmit={handleSubmit}
-              className="w-full bg-white rounded-2xl shadow-md border border-slate-200 p-6 space-y-4"
-            >
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">
-            Randevu Talep Formu
-          </h2>
-          <p className="text-sm text-slate-600 mb-4">
-            Görüşme yapmak istediğiniz öğretim elemanını, ders bilgisini ve
-            uygun olduğunuz tarih/saat bilgisini giriniz.
-          </p>
-
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
-            </div>
-          )}
-
-          {/* Öğretim elemanı adı */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Öğretim Elemanı
-            </label>
-            {loadingTeachers ? (
-              <div className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-500">
-                Öğretmenler yükleniyor...
-              </div>
-            ) : teachers.length > 0 ? (
-              <select
-                value={lecturerName}
-                onChange={(e) => setLecturerName(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
+      <main className="flex-1 p-8">
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 max-w-6xl mx-auto">
+          {/* SOL ANA KART */}
+          <section className="lg:col-span-3 bg-white rounded-xl border shadow">
+            {/* SEKME BAŞLIKLARI */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setActiveTab("request")}
+                className={`flex-1 py-3 text-sm font-medium ${activeTab === "request"
+                  ? "border-b-2 border-[#d71920] text-[#d71920]"
+                  : "text-slate-500"
+                  }`}
               >
-                <option value="">Öğretim elemanı seçiniz</option>
-                {teachers.map((teacher) => (
-                  <option key={teacher.id} value={teacher.name}>
-                    {teacher.name}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type="text"
-                value={lecturerName}
-                onChange={(e) => setLecturerName(e.target.value)}
-                placeholder="Öğretim elemanı adı"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-            )}
-          </div>
+                Randevu Talebi
+              </button>
 
-          {/* Ders */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Ders
-            </label>
-            <input
-              type="text"
-              value={course}
-              onChange={(e) => setCourse(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          {/* Görüşme sebebi */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Görüşme sebebi
-            </label>
-            <div className="flex flex-col gap-2 text-sm text-slate-700">
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="reason"
-                  value="question"
-                  checked={reason === "question"}
-                  onChange={() => setReason("question")}
-                />
-                <span>Soru sorma</span>
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="reason"
-                  value="exam"
-                  checked={reason === "exam"}
-                  onChange={() => setReason("exam")}
-                />
-                <span>Sınav kağıdına bakma</span>
-              </label>
-              <label className="inline-flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="reason"
-                  value="other"
-                  checked={reason === "other"}
-                  onChange={() => setReason("other")}
-                />
-                <span>Diğer</span>
-              </label>
-            </div>
-
-            {isOtherSelected && (
-              <textarea
-                className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                rows={2}
-                //kaç elemanlık metin giriliyosa ekle
-                value={otherReason}
-                onChange={(e) => setOtherReason(e.target.value)}
-              />
-            )}
-          </div>
-
-          {/* Tarih - Saat */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Tarih
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Saat
-              </label>
-              <select
-                value={time}
-                onChange={(e) => setTime(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                required
+              <button
+                onClick={() => setActiveTab("myAppointments")}
+                className={`flex-1 py-3 text-sm font-medium ${activeTab === "myAppointments"
+                  ? "border-b-2 border-[#d71920] text-[#d71920]"
+                  : "text-slate-500"
+                  }`}
               >
-                <option value="">Saat seçiniz</option>
-                {(() => {
-                  const times = [];
-                  for (let hour = 9; hour <= 17; hour++) {
-                    times.push(`${String(hour).padStart(2, '0')}:00`);
-                    if (hour < 17) {
-                      times.push(`${String(hour).padStart(2, '0')}:30`);
-                    }
-                  }
-                  return times.map((timeValue) => (
-                    <option key={timeValue} value={timeValue}>
-                      {timeValue}
-                    </option>
-                  ));
-                })()}
-              </select>
-            </div>
-          </div>
-
-          {/* Gönder butonu */}
-          <div className="pt-2">
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-blue-600 text-white text-sm font-medium py-2.5 hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? "Gönderiliyor..." : "Randevu talebi gönder"}
-            </button>
-          </div>
-        </form>
-          </div>
-
-          {/* Sağ taraf - Randevularım */}
-          <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl shadow-md border border-slate-200 p-6">
-              <h2 className="text-xl font-semibold text-slate-900 mb-4">
                 Randevularım
-              </h2>
-              
-              {loadingAppointments ? (
-                <div className="text-center py-8">
-                  <p className="text-slate-500 text-sm">Yükleniyor...</p>
+              </button>
+            </div>
+
+            <div className="p-6">
+              {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 p-3 rounded mb-4">
+                  {error}
                 </div>
-              ) : appointments.length === 0 ? (
-                <p className="text-slate-500 text-sm">
-                  Henüz onaylanan veya reddedilen randevu yok.
-                </p>
-              ) : (
-                <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                  {appointments.map((apt) => (
-                    <div
-                      key={apt.id}
-                      className={`border rounded-lg p-4 ${
-                        apt.status?.toLowerCase() === "approved"
-                          ? "border-green-200 bg-green-50"
-                          : "border-red-200 bg-red-50"
-                      }`}
+              )}
+
+              {/* ================= RANDEVU TALEBİ ================= */}
+              {activeTab === "request" && (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <select
+                    value={lecturerName}
+                    onChange={(e) => setLecturerName(e.target.value)}
+                    required
+                    className="w-full border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">Öğretim elemanı seçiniz</option>
+                    {teachers.map((t) => (
+                      <option key={t.id} value={t.name}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <input
+                    value={course}
+                    onChange={(e) => setCourse(e.target.value)}
+                    placeholder="Ders"
+                    className="w-full border rounded px-3 py-2 text-sm"
+                  />
+
+                  <div className="flex gap-4 text-sm">
+                    <label>
+                      <input
+                        type="radio"
+                        checked={reason === "question"}
+                        onChange={() => setReason("question")}
+                      />{" "}
+                      Soru
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={reason === "exam"}
+                        onChange={() => setReason("exam")}
+                      />{" "}
+                      Sınav
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        checked={reason === "other"}
+                        onChange={() => setReason("other")}
+                      />{" "}
+                      Diğer
+                    </label>
+                  </div>
+
+                  {reason === "other" && (
+                    <textarea
+                      value={otherReason}
+                      onChange={(e) => setOtherReason(e.target.value)}
+                      className="w-full border rounded px-3 py-2 text-sm"
+                    />
+                  )}
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(e) => setDate(e.target.value)}
+                      required
+                      className="border rounded px-3 py-2 text-sm"
+                    />
+                    <select
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      required
+                      className="border rounded px-3 py-2 text-sm w-full"
+                      disabled={!date || availableTimes.length === 0}
                     >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <p className="font-semibold text-slate-900 text-sm">
-                            {(apt as any).subject || apt.course || "Ders belirtilmemiş"}
-                          </p>
-                          <p className="text-xs text-slate-600 mt-1">
-                            Öğretmen: {(apt as any).teacherName || "Bilinmiyor"}
-                          </p>
-                          <p className="text-xs text-slate-600">
-                            {apt.date ? new Date(apt.date).toLocaleDateString('tr-TR') : 'Tarih belirtilmemiş'} - {apt.time ? (typeof apt.time === 'string' ? apt.time : (typeof apt.time === 'object' && apt.time !== null ? `${String((apt.time as any).hours || 0).padStart(2, '0')}:${String((apt.time as any).minutes || 0).padStart(2, '0')}` : 'Saat belirtilmemiş')) : 'Saat belirtilmemiş'}
-                          </p>
-                          {(apt as any).rejectionReason && (
-                            <p className="text-xs text-red-600 mt-1 italic">
-                              Red Nedeni: {(apt as any).rejectionReason}
-                            </p>
-                          )}
-                        </div>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            apt.status?.toLowerCase() === "approved"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
+                      <option value="">
+                        {!date
+                          ? "Önce Tarih Seçiniz"
+                          : availableTimes.length === 0
+                            ? "Müsaitlik Yok"
+                            : "Saat Seçiniz"}
+                      </option>
+                      {availableTimes.map((t) => (
+                        <option key={t} value={t}>
+                          {t}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    disabled={loading}
+                    className="w-full bg-[#d71920] text-white py-2 rounded"
+                  >
+                    {loading ? "Gönderiliyor..." : "Randevu Talep Et"}
+                  </button>
+                </form>
+              )}
+
+              {/* ================= RANDEVULARIM ================= */}
+              {activeTab === "myAppointments" && (
+                <div className="space-y-3">
+                  {loadingAppointments ? (
+                    <p className="text-sm text-slate-500">Yükleniyor...</p>
+                  ) : appointments.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      Henüz randevu yok.
+                    </p>
+                  ) : (
+                    appointments.map((apt) => (
+                      <div
+                        key={apt.id}
+                        className={`p-4 rounded border ${apt.status?.toLowerCase() === "approved"
+                          ? "bg-green-50 border-green-200"
+                          : "bg-red-50 border-red-200"
                           }`}
+                      >
+                        {/* Ders */}
+                        <p className="font-semibold text-sm text-slate-900">
+                          {(apt as any).subject ||
+                            apt.course ||
+                            "Ders belirtilmemiş"}
+                        </p>
+
+                        {/* Hoca */}
+                        <p className="text-xs text-slate-600 mt-1">
+                          Öğretim Elemanı:{" "}
+                          {(apt as any).teacherName ||
+                            (apt as any).lecturerName ||
+                            "Bilinmiyor"}
+                        </p>
+
+                        {/* Tarih – Saat */}
+                        <p className="text-xs text-slate-600">
+                          {apt.date
+                            ? new Date(apt.date).toLocaleDateString("tr-TR")
+                            : "Tarih yok"}{" "}
+                          –{" "}
+                          {apt.time
+                            ? typeof apt.time === "string"
+                              ? apt.time
+                              : `${String(
+                                (apt.time as any).hours || 0
+                              ).padStart(2, "0")}:${String(
+                                (apt.time as any).minutes || 0
+                              ).padStart(2, "0")}`
+                            : "Saat yok"}
+                        </p>
+
+                        {/* Durum */}
+                        <span
+                          className={`inline-block mt-2 px-2 py-0.5 rounded text-[11px] font-medium ${apt.status?.toLowerCase() === "approved"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-red-100 text-red-800"
+                            }`}
                         >
-                          {apt.status?.toLowerCase() === "approved" ? "Onaylandı" : "Reddedildi"}
+                          {apt.status?.toLowerCase() === "approved"
+                            ? "Onaylandı"
+                            : "Reddedildi"}
                         </span>
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )}
             </div>
-          </div>
+          </section>
+
+          {/* SAĞ BİLGİ PANELİ */}
+          <section className="lg:col-span-2 bg-white rounded-xl border p-5 shadow">
+            <h2 className="text-sm font-semibold mb-3">Bilgilendirme</h2>
+
+            <ul className="text-sm text-slate-600 space-y-2 list-disc pl-4">
+              <li>Randevular öğretim elemanı tarafından onaylanır veya reddedilir.</li>
+              <li>Randevu saatleri <strong>09:00 – 17:00</strong> arasıdır.</li>
+              <li>Seçilebilir saatler <strong>30 dakika</strong> aralıklarla listelenir.</li>
+              <li>
+                Randevu durumunu <strong>“Randevularım”</strong> sekmesinden takip
+                edebilirsiniz.
+              </li>
+            </ul>
+          </section>
+
         </div>
       </main>
     </div>

@@ -118,5 +118,81 @@ public class ScheduleService
         await _context.InstructorSchedules.AddRangeAsync(newSchedules);
         await _context.SaveChangesAsync();
     }
+    public async Task<List<ScheduleSlotResponseDto>> GetScheduleByInstructorIdAsync(int instructorId)
+    {
+        var schedules = await _context.InstructorSchedules
+            .Where(s => s.InstructorId == instructorId)
+            .ToListAsync();
+
+        var result = new List<ScheduleSlotResponseDto>();
+        var dayMap = new Dictionary<int, string>
+        {
+            { 1, "Pzt" },
+            { 2, "Sal" },
+            { 3, "Çar" },
+            { 4, "Per" },
+            { 5, "Cum" }
+        };
+
+        foreach (var schedule in schedules)
+        {
+            var dayName = dayMap.GetValueOrDefault(schedule.DayOfWeek, "");
+            var timeStr = schedule.StartTime.ToString(@"hh\.mm");
+            var endTime = schedule.StartTime.Add(TimeSpan.FromMinutes(50)); // Ders saati 50 dk varsayımı
+            var endTimeStr = endTime.ToString(@"hh\.mm");
+            var slot = $"{dayName}-{timeStr}-{endTimeStr}";
+
+            result.Add(new ScheduleSlotResponseDto
+            {
+                Id = schedule.Id,
+                DayOfWeek = schedule.DayOfWeek,
+                StartTime = schedule.StartTime.ToString(@"hh\:mm"),
+                CourseName = schedule.CourseName,
+                Slot = slot
+            });
+        }
+
+        return result;
+    }
+
+    public async Task<bool> IsTimeSlotAvailableAsync(int instructorId, DateTime date, TimeSpan time)
+    {
+        // Tarihin haftanın hangi günü olduğunu bul (1=Pazartesi, ... 5=Cuma)
+        // DayOfWeek enum: Sunday=0, Monday=1, ... Friday=5, Saturday=6
+        var dayOfWeek = (int)date.DayOfWeek;
+        
+        // Pazar(0) veya Cumartesi(6) ise direkt false dön
+        if (dayOfWeek == 0 || dayOfWeek == 6) return false;
+
+        // InstructorSchedule'da bu gün ve saatte kayıt var mı?
+        // Çakışma kontrolü yapmamız lazım. Dersler genelde 50 dk, randevular 30 dk.
+        // Eğer 09:00'da ders varsa, 09:00-09:50 doludur.
+        // Bu durumda 09:00 ve 09:30 randevuları alınamaz.
+        
+        var daySchedule = await _context.InstructorSchedules
+            .Where(s => s.InstructorId == instructorId && s.DayOfWeek == dayOfWeek)
+            .ToListAsync();
+
+        // Appointment aralığı: [time, time + 30dk]
+        var appointmentStart = time;
+        var appointmentEnd = time.Add(TimeSpan.FromMinutes(30));
+
+        foreach (var course in daySchedule)
+        {
+            // Course aralığı: [StartTime, StartTime + 50dk]
+            var courseStart = course.StartTime;
+            var courseEnd = course.StartTime.Add(TimeSpan.FromMinutes(50));
+
+            // Çakışma kuralı: (StartA < EndB) ve (EndA > StartB)
+            if (appointmentStart < courseEnd && appointmentEnd > courseStart)
+            {
+                // Çakışma var, müsait değil
+                return false;
+            }
+        }
+
+        // Çakışma yok, müsait
+        return true;
+    }
 }
 

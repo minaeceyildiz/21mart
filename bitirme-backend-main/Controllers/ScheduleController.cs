@@ -42,6 +42,22 @@ public class ScheduleController : ControllerBase
         }
     }
 
+    [HttpGet("instructor/{id}")]
+    [Authorize] // Öğrenci ve öğretmen erişebilir
+    public async Task<ActionResult<List<ScheduleSlotResponseDto>>> GetScheduleByInstructorId(int id)
+    {
+        try
+        {
+            var schedule = await _scheduleService.GetScheduleByInstructorIdAsync(id);
+            return Ok(schedule);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Öğretmen programı getirilirken hata oluştu. ID: {Id}", id);
+            return StatusCode(500, "Ders programı getirilirken bir hata oluştu");
+        }
+    }
+
     [HttpPost("save")]
     public async Task<ActionResult> SaveSchedule([FromBody] SaveScheduleDto dto)
     {

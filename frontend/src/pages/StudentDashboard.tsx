@@ -24,7 +24,7 @@ const StudentDashboard: React.FC = () => {
         <div className="max-w-6xl mx-auto flex items-center justify-between px-6 py-6">
           <h1 className="text-2xl font-semibold">Başkent Yaşam – Öğrenci</h1>
           <div className="flex items-center gap-4 text-base">
-            <span>Hoş geldiniz, {user?.name || "Öğrenci"}</span>
+            <span>Hoşgeldiniz, {user?.name || "Öğrenci"}</span>
             <NotificationBell />
             <button
               onClick={openLogoutModal}

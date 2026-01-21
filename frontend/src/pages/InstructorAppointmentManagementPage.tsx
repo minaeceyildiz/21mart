@@ -125,7 +125,7 @@ const InstructorAppointmentManagement: React.FC = () => {
   // Pending randevular (gelen talepler)
   // Not: "requests" sekmesi için zaten pending-requests endpoint'i çağrılıyor,
   // bu yüzden tüm appointments zaten pending. Ama yine de filtreleme yapalım güvenlik için.
-  const pendingAppointments = activeTab === "requests" 
+  const pendingAppointments = activeTab === "requests"
     ? appointments // pending-requests endpoint'i zaten sadece pending döndürüyor
     : appointments.filter((apt) => apt.status?.toLowerCase() === "pending");
 
@@ -133,7 +133,7 @@ const InstructorAppointmentManagement: React.FC = () => {
   const approvedAppointments = appointments.filter(
     (apt) => apt.status?.toLowerCase() === "approved"
   );
-  
+
   // Debug: Randevuları console'a yazdır
   console.log("Appointments state:", appointments);
   console.log("Pending appointments:", pendingAppointments);
@@ -162,22 +162,20 @@ const InstructorAppointmentManagement: React.FC = () => {
             <div className="flex border-b">
               <button
                 onClick={() => setActiveTab("requests")}
-                className={`flex-1 py-3 text-sm font-medium ${
-                  activeTab === "requests"
-                    ? "border-b-2 border-[#d71920] text-[#d71920]"
-                    : "text-slate-500"
-                }`}
+                className={`flex-1 py-3 text-sm font-medium ${activeTab === "requests"
+                  ? "border-b-2 border-[#d71920] text-[#d71920]"
+                  : "text-slate-500"
+                  }`}
               >
                 Gelen Talepler
               </button>
 
               <button
                 onClick={() => setActiveTab("myAppointments")}
-                className={`flex-1 py-3 text-sm font-medium ${
-                  activeTab === "myAppointments"
-                    ? "border-b-2 border-[#d71920] text-[#d71920]"
-                    : "text-slate-500"
-                }`}
+                className={`flex-1 py-3 text-sm font-medium ${activeTab === "myAppointments"
+                  ? "border-b-2 border-[#d71920] text-[#d71920]"
+                  : "text-slate-500"
+                  }`}
               >
                 Randevularım
               </button>
@@ -221,7 +219,7 @@ const InstructorAppointmentManagement: React.FC = () => {
                               Sebep: {(() => {
                                 const reason = (apt as any).requestReason || apt.reason || "";
                                 const reasonLower = reason.toLowerCase().trim();
-                                
+
                                 // Eğer reason "question", "exam", "other" gibi enum değerleriyse Türkçe'ye çevir
                                 // Aksi halde öğrencinin yazdığı özel metni göster
                                 if (reasonLower === "question") {
@@ -288,16 +286,29 @@ const InstructorAppointmentManagement: React.FC = () => {
                           {apt.course || "Ders belirtilmemiş"}
                         </p>
                         <p className="text-sm text-slate-600 mt-1">
-                          {apt.reason}
+                          Öğrenci: {(apt as any).studentName || "Bilinmiyor"}
+                        </p>
+                        <p className="text-sm text-slate-600 mt-1">
+                          Sebep: {(() => {
+                            const r = apt.reason || "";
+                            const lower = r.toLowerCase().trim();
+                            if (lower === "question") return "Soru sorma";
+                            if (lower === "exam") return "Sınav kağıdına bakma";
+                            // Eger 'other' ise ve note varsa notu goster, yoksa 'Diğer' yaz
+                            if (lower === "other") return apt.note || "Diğer";
+                            // Diger durumlar (ozel metin)
+                            return r || "Sebep belirtilmemiş";
+                          })()}
                         </p>
                         <p className="text-sm text-slate-600">
-                          {apt.date} - {apt.time}
+                          {apt.date ? new Date(apt.date).toLocaleDateString('tr-TR') : 'Tarih belirtilmemiş'} - {apt.time ? (typeof apt.time === 'string' ? apt.time : (typeof apt.time === 'object' && apt.time !== null ? `${String((apt.time as any).hours || 0).padStart(2, '0')}:${String((apt.time as any).minutes || 0).padStart(2, '0')}` : 'Saat belirtilmemiş')) : 'Saat belirtilmemiş'}
                         </p>
                         {apt.note && (
                           <p className="text-sm text-slate-500 mt-1 italic">
                             Not: {apt.note}
                           </p>
                         )}
+
                       </div>
                     ))
                   )}
@@ -343,11 +354,10 @@ const InstructorAppointmentManagement: React.FC = () => {
                         key={key}
                         onClick={() => toggleSlot(key)}
                         className={`h-6 rounded border transition
-                        ${
-                          active
+                        ${active
                             ? "bg-[#d71920] border-[#d71920]"
                             : "bg-slate-100 hover:bg-slate-200"
-                        }`}
+                          }`}
                       />
                     );
                   })}
