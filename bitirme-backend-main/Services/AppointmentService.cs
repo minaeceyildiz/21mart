@@ -42,12 +42,7 @@ public class AppointmentService : IAppointmentService
         if (appointments.Count == 0)
             return appointments;
         
-        // Tüm appointment ID'lerini topla
-        var appointmentIds = appointments.Select(a => a.Id).ToList();
-        var idsString = string.Join(",", appointmentIds);
-        
-        // Tüm status'leri tek sorguda al - direkt connection kullan
-        var statusDict = new Dictionary<int, string>();
+        // Status kolonu olmadığı için, responded_at ve rejection_reason kolonlarına göre status belirle
         var connection = _context.Database.GetDbConnection();
         var wasOpen = connection.State == System.Data.ConnectionState.Open;
         if (!wasOpen)
@@ -56,14 +51,30 @@ public class AppointmentService : IAppointmentService
         }
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT \"id\", \"status\"::text FROM \"appointments\" WHERE \"id\" IN ({idsString})";
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            foreach (var appointment in appointments)
             {
-                var id = reader.GetInt32(0);
-                var status = reader.IsDBNull(1) ? "pending" : reader.GetString(1);
-                statusDict[id] = status.ToLower();
+                var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
+                appointment.Date = scheduledAt.Date;
+                appointment.Time = scheduledAt.TimeOfDay;
+                
+                // rejection_reason kontrolü
+                using var checkCmd = connection.CreateCommand();
+                checkCmd.CommandText = $"SELECT \"rejection_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                var rejectionReasonValue = await checkCmd.ExecuteScalarAsync();
+                
+                if (!appointment.UpdatedAt.HasValue)
+                {
+                    appointment.Status = AppointmentStatus.Pending;
+                }
+                else if (rejectionReasonValue != null && !string.IsNullOrWhiteSpace(rejectionReasonValue.ToString()))
+                {
+                    appointment.Status = AppointmentStatus.Rejected;
+                    appointment.RejectionReason = rejectionReasonValue.ToString();
+                }
+                else
+                {
+                    appointment.Status = AppointmentStatus.Approved;
+                }
             }
         }
         finally
@@ -72,24 +83,6 @@ public class AppointmentService : IAppointmentService
             {
                 await connection.CloseAsync();
             }
-        }
-        
-        // scheduled_at'ten Date ve Time'ı yükle ve status'ü ata
-        foreach (var appointment in appointments)
-        {
-            var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
-            appointment.Date = scheduledAt.Date;
-            appointment.Time = scheduledAt.TimeOfDay;
-            
-            // Status'ü dictionary'den al
-            var statusValue = statusDict.GetValueOrDefault(appointment.Id, "pending");
-            appointment.Status = statusValue switch
-            {
-                "pending" => AppointmentStatus.Pending,
-                "approved" => AppointmentStatus.Approved,
-                "rejected" => AppointmentStatus.Rejected,
-                _ => AppointmentStatus.Pending
-            };
         }
         
         return appointments.OrderByDescending(a => a.Date).ToList();
@@ -109,19 +102,40 @@ public class AppointmentService : IAppointmentService
             appointment.Date = scheduledAt.Date;
             appointment.Time = scheduledAt.TimeOfDay;
             
-            // Status'ü veritabanından oku (enum tipinde)
-            var statusValue = await _context.Database.SqlQueryRaw<string>(
-                $"SELECT \"status\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}"
-            ).FirstOrDefaultAsync();
-            
-            // Status'ü enum'a çevir
-            appointment.Status = statusValue?.ToLower() switch
+            // rejection_reason kontrolü yaparak status belirle
+            var connection = _context.Database.GetDbConnection();
+            var wasOpen = connection.State == System.Data.ConnectionState.Open;
+            if (!wasOpen)
             {
-                "pending" => AppointmentStatus.Pending,
-                "approved" => AppointmentStatus.Approved,
-                "rejected" => AppointmentStatus.Rejected,
-                _ => AppointmentStatus.Pending
-            };
+                await connection.OpenAsync();
+            }
+            try
+            {
+                using var checkCmd = connection.CreateCommand();
+                checkCmd.CommandText = $"SELECT \"rejection_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                var rejectionReasonValue = await checkCmd.ExecuteScalarAsync();
+                
+                if (!appointment.UpdatedAt.HasValue)
+                {
+                    appointment.Status = AppointmentStatus.Pending;
+                }
+                else if (rejectionReasonValue != null && !string.IsNullOrWhiteSpace(rejectionReasonValue.ToString()))
+                {
+                    appointment.Status = AppointmentStatus.Rejected;
+                    appointment.RejectionReason = rejectionReasonValue.ToString();
+                }
+                else
+                {
+                    appointment.Status = AppointmentStatus.Approved;
+                }
+            }
+            finally
+            {
+                if (!wasOpen)
+                {
+                    await connection.CloseAsync();
+                }
+            }
         }
         
         return appointment;
@@ -270,12 +284,12 @@ public class AppointmentService : IAppointmentService
             int newId;
             try
             {
-                // reason (enum) ve request_reason (text) kolonlarını birlikte kaydet
+                // Sadece mevcut kolonlara kaydet (reason ve status kolonları ignore edildi)
                 string insertSql = $@"
                     INSERT INTO ""appointments"" 
-                    (""student_id"", ""instructor_id"", ""course_name"", ""reason"", ""request_reason"", ""status"", ""scheduled_at"", ""created_at"")
+                    (""student_id"", ""instructor_id"", ""course_name"", ""request_reason"", ""scheduled_at"", ""created_at"")
                     VALUES 
-                    ({studentId}, {teacher.Id}, '{subjectEscaped}', '{reasonValue}'::appointment_reason, '{originalReasonEscaped}', '{statusValue}'::appointment_status, '{scheduledAtFormatted}'::timestamp, NOW())
+                    ({studentId}, {teacher.Id}, '{subjectEscaped}', '{originalReasonEscaped}', '{scheduledAtFormatted}'::timestamp, NOW())
                     RETURNING ""id"";
                 ";
                 
@@ -434,21 +448,30 @@ public class AppointmentService : IAppointmentService
         {
             var oldStatus = appointment.Status;
             appointment.Status = dto.Status.Value;
+            appointment.UpdatedAt = DateTime.Now;
 
-            // Status enum değerini normalize et (pending, approved, rejected)
-            var statusValue = dto.Status.Value switch
+            // Rejected ise rejection_reason'u da güncelle
+            if (dto.Status.Value == AppointmentStatus.Rejected)
             {
-                AppointmentStatus.Pending => "pending",
-                AppointmentStatus.Approved => "approved",
-                AppointmentStatus.Rejected => "rejected",
-                AppointmentStatus.Cancelled => "rejected", // Cancelled yok, rejected kullan
-                AppointmentStatus.Completed => "approved", // Completed yok, approved kullan
-                _ => "pending"
-            };
-
-            // status kolonu enum tipinde olduğu için raw SQL ile güncelle
-            await _context.Database.ExecuteSqlRawAsync(
-                $"UPDATE \"appointments\" SET \"status\" = '{statusValue}'::appointment_status, \"responded_at\" = NOW() WHERE \"id\" = {appointment.Id}");
+                var rejectionReason = dto.RejectionReason ?? "Sebep belirtilmedi";
+                appointment.RejectionReason = rejectionReason;
+                var escapedReason = rejectionReason.Replace("'", "''");
+                
+                Console.WriteLine($"[DEBUG] UpdateAppointment - Rejecting ID: {appointment.Id}, Reason: {rejectionReason}");
+                
+                await _context.Database.ExecuteSqlRawAsync(
+                    $"UPDATE \"appointments\" SET \"responded_at\" = NOW(), \"rejection_reason\" = '{escapedReason}' WHERE \"id\" = {appointment.Id}");
+            }
+            else
+            {
+                // Onaylandı veya başka durum
+                appointment.RejectionReason = null;
+                
+                Console.WriteLine($"[DEBUG] UpdateAppointment - Approving ID: {appointment.Id}");
+                
+                await _context.Database.ExecuteSqlRawAsync(
+                    $"UPDATE \"appointments\" SET \"responded_at\" = NOW(), \"rejection_reason\" = NULL WHERE \"id\" = {appointment.Id}");
+            }
 
             // Durum değişikliğinde bildirim gönder
             var notificationType = dto.Status.Value switch
@@ -477,7 +500,7 @@ public class AppointmentService : IAppointmentService
                     $"Sayın {appointment.Student.Name}, {appointment.Date:dd.MM.yyyy} tarihinde {appointment.Time:hh\\:mm} saatindeki {appointment.Teacher.Name} hocasına olan randevu talebiniz {statusMessage}.",
                     notificationType,
                     appointment.Student.Email,
-                    appointment.Student.Id, // 🔥 KRİTİK: Öğrenci UserId
+                    appointment.Student.Id,
                     appointment.Id
                 );
             }
@@ -518,15 +541,7 @@ public class AppointmentService : IAppointmentService
         if (appointments.Count == 0)
             return appointments;
         
-        // Tüm appointment ID'lerini topla
-        var appointmentIds = appointments.Select(a => a.Id).ToList();
-        if (appointmentIds.Count == 0)
-            return appointments;
-        
-        var idsString = string.Join(",", appointmentIds);
-        
-        // Tüm status'leri tek sorguda al - direkt connection kullan
-        var statusDict = new Dictionary<int, string>();
+        // Status kolonu olmadığı için, responded_at ve rejection_reason kolonlarına göre status belirle
         var connection = _context.Database.GetDbConnection();
         var wasOpen = connection.State == System.Data.ConnectionState.Open;
         if (!wasOpen)
@@ -535,14 +550,61 @@ public class AppointmentService : IAppointmentService
         }
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT \"id\", \"status\"::text FROM \"appointments\" WHERE \"id\" IN ({idsString})";
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            // Her randevuyu kontrol et ve status'ü belirle
+            foreach (var appointment in appointments)
             {
-                var id = reader.GetInt32(0);
-                var status = reader.IsDBNull(1) ? "pending" : reader.GetString(1);
-                statusDict[id] = status.ToLower();
+                var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
+                appointment.Date = scheduledAt.Date;
+                appointment.Time = scheduledAt.TimeOfDay;
+                
+                // rejection_reason kolonunu kontrol et
+                using var checkCmd = connection.CreateCommand();
+                checkCmd.CommandText = $"SELECT \"rejection_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                var rejectionReasonValue = await checkCmd.ExecuteScalarAsync();
+                
+                // Status belirleme:
+                // - responded_at NULL -> Pending
+                // - responded_at dolu, rejection_reason dolu -> Rejected
+                // - responded_at dolu, rejection_reason NULL/boş -> Approved
+                if (!appointment.UpdatedAt.HasValue)
+                {
+                    appointment.Status = AppointmentStatus.Pending;
+                }
+                else if (rejectionReasonValue != null && !string.IsNullOrWhiteSpace(rejectionReasonValue.ToString()))
+                {
+                    appointment.Status = AppointmentStatus.Rejected;
+                    appointment.RejectionReason = rejectionReasonValue.ToString();
+                }
+                else
+                {
+                    appointment.Status = AppointmentStatus.Approved;
+                }
+            
+                // RequestReason'ı request_reason kolonundan oku
+                if (string.IsNullOrWhiteSpace(appointment.RequestReason) || appointment.RequestReason == "other")
+                {
+                    try
+                    {
+                        using var reasonCommand = connection.CreateCommand();
+                        reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                        var reasonResult = await reasonCommand.ExecuteScalarAsync();
+                        if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
+                        {
+                            var reasonText = reasonResult.ToString();
+                            appointment.RequestReason = !string.IsNullOrWhiteSpace(reasonText) 
+                                ? reasonText 
+                                : "Belirtilmemiş";
+                        }
+                        else
+                        {
+                            appointment.RequestReason = "Belirtilmemiş";
+                        }
+                    }
+                    catch
+                    {
+                        appointment.RequestReason = "Belirtilmemiş";
+                    }
+                }
             }
         }
         finally
@@ -550,72 +612,6 @@ public class AppointmentService : IAppointmentService
             if (!wasOpen)
             {
                 await connection.CloseAsync();
-            }
-        }
-        
-        // scheduled_at'ten Date ve Time'ı yükle ve status'ü ata
-        foreach (var appointment in appointments)
-        {
-            var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
-            appointment.Date = scheduledAt.Date;
-            appointment.Time = scheduledAt.TimeOfDay;
-            
-            // Status'ü dictionary'den al
-            var statusValue = statusDict.GetValueOrDefault(appointment.Id, "pending");
-            appointment.Status = statusValue switch
-            {
-                "pending" => AppointmentStatus.Pending,
-                "approved" => AppointmentStatus.Approved,
-                "rejected" => AppointmentStatus.Rejected,
-                _ => AppointmentStatus.Pending
-            };
-            
-            // RequestReason'ı request_reason kolonundan oku (öğrencinin yazdığı özel metin)
-            // Eğer kolon yoksa veya değer yoksa, reason enum kolonundan oku
-            try
-            {
-                using var reasonCommand = connection.CreateCommand();
-                reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                var reasonResult = await reasonCommand.ExecuteScalarAsync();
-                if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
-                {
-                    var reasonText = reasonResult.ToString();
-                    if (!string.IsNullOrWhiteSpace(reasonText))
-                    {
-                        appointment.RequestReason = reasonText;
-                    }
-                    else
-                    {
-                        // request_reason boşsa, reason enum kolonundan oku
-                        using var enumCommand = connection.CreateCommand();
-                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                        var enumResult = await enumCommand.ExecuteScalarAsync();
-                        appointment.RequestReason = enumResult?.ToString() ?? "other";
-                    }
-                }
-                else
-                {
-                    // request_reason null ise, reason enum kolonundan oku
-                    using var enumCommand = connection.CreateCommand();
-                    enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                    var enumResult = await enumCommand.ExecuteScalarAsync();
-                    appointment.RequestReason = enumResult?.ToString() ?? "other";
-                }
-            }
-            catch
-            {
-                // request_reason kolonu yoksa veya hata olursa, reason enum kolonundan oku
-                try
-                {
-                    using var enumCommand = connection.CreateCommand();
-                    enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                    var enumResult = await enumCommand.ExecuteScalarAsync();
-                    appointment.RequestReason = enumResult?.ToString() ?? "other";
-                }
-                catch
-                {
-                    appointment.RequestReason = "other";
-                }
             }
         }
         
@@ -636,15 +632,8 @@ public class AppointmentService : IAppointmentService
         if (appointments.Count == 0)
             return appointments;
         
-        // Tüm appointment ID'lerini topla
-        var appointmentIds = appointments.Select(a => a.Id).ToList();
-        if (appointmentIds.Count == 0)
-            return appointments;
-        
-        var idsString = string.Join(",", appointmentIds);
-        
-        // Tüm status'leri tek sorguda al - direkt connection kullan
-        var statusDict = new Dictionary<int, string>();
+        // Status kolonu olmadığı için, responded_at ve rejection_reason kolonlarına göre status belirle
+        var filteredAppointments = new List<Appointment>();
         var connection = _context.Database.GetDbConnection();
         var wasOpen = connection.State == System.Data.ConnectionState.Open;
         if (!wasOpen)
@@ -653,14 +642,60 @@ public class AppointmentService : IAppointmentService
         }
         try
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT \"id\", \"status\"::text FROM \"appointments\" WHERE \"id\" IN ({idsString})";
-            using var reader = await command.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
+            // Her randevuyu kontrol et
+            foreach (var appointment in appointments)
             {
-                var id = reader.GetInt32(0);
-                var status = reader.IsDBNull(1) ? "pending" : reader.GetString(1);
-                statusDict[id] = status.ToLower();
+                var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
+                appointment.Date = scheduledAt.Date;
+                appointment.Time = scheduledAt.TimeOfDay;
+                
+                // rejection_reason kolonunu kontrol et
+                using var checkCmd = connection.CreateCommand();
+                checkCmd.CommandText = $"SELECT \"rejection_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                var rejectionReasonValue = await checkCmd.ExecuteScalarAsync();
+                
+                // Eğer responded_at NULL ise -> Pending
+                // Eğer responded_at dolu ve rejection_reason NULL/boş ise -> Approved (bunu dahil et)
+                // Eğer responded_at dolu ve rejection_reason dolu ise -> Rejected (bunu hariç tut)
+                if (!appointment.UpdatedAt.HasValue)
+                {
+                    // Pending - dahil etme (zaten pending requests'te gözükecek)
+                    continue;
+                }
+                else if (rejectionReasonValue == null || string.IsNullOrWhiteSpace(rejectionReasonValue.ToString()))
+                {
+                    // Approved - dahil et
+                    appointment.Status = AppointmentStatus.Approved;
+                    
+                    // RequestReason'ı request_reason kolonundan oku
+                    if (string.IsNullOrWhiteSpace(appointment.RequestReason) || appointment.RequestReason == "other")
+                    {
+                        try
+                        {
+                            using var reasonCommand = connection.CreateCommand();
+                            reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
+                            var reasonResult = await reasonCommand.ExecuteScalarAsync();
+                            if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
+                            {
+                                var reasonText = reasonResult.ToString();
+                                appointment.RequestReason = !string.IsNullOrWhiteSpace(reasonText) 
+                                    ? reasonText 
+                                    : "Belirtilmemiş";
+                            }
+                            else
+                            {
+                                appointment.RequestReason = "Belirtilmemiş";
+                            }
+                        }
+                        catch
+                        {
+                            appointment.RequestReason = "Belirtilmemiş";
+                        }
+                    }
+                    
+                    filteredAppointments.Add(appointment);
+                }
+                // Rejected - hariç tut (else bloğu gereksiz)
             }
         }
         finally
@@ -671,78 +706,7 @@ public class AppointmentService : IAppointmentService
             }
         }
         
-        // scheduled_at'ten Date ve Time'ı yükle ve status'ü ata
-        foreach (var appointment in appointments)
-        {
-            var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
-            appointment.Date = scheduledAt.Date;
-            appointment.Time = scheduledAt.TimeOfDay;
-            
-            // Status'ü dictionary'den al
-            var statusValue = statusDict.GetValueOrDefault(appointment.Id, "pending");
-            appointment.Status = statusValue switch
-            {
-                "pending" => AppointmentStatus.Pending,
-                "approved" => AppointmentStatus.Approved,
-                "rejected" => AppointmentStatus.Rejected,
-                _ => AppointmentStatus.Pending
-            };
-            
-            // RequestReason'ı request_reason kolonundan oku (öğrencinin yazdığı özel metin)
-            // Eğer kolon yoksa veya değer yoksa, reason enum kolonundan oku
-            // RequestReason'ı request_reason kolonundan oku (öğrencinin yazdığı özel metin)
-            // Eğer zaten doluysa (EF Core ile geldiyse) ve "other" değilse tekrar okuma
-            if (string.IsNullOrWhiteSpace(appointment.RequestReason) || appointment.RequestReason == "other")
-            {
-                try
-                {
-                    using var reasonCommand = connection.CreateCommand();
-                    reasonCommand.CommandText = $"SELECT \"request_reason\" FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                    var reasonResult = await reasonCommand.ExecuteScalarAsync();
-                    if (reasonResult != null && !DBNull.Value.Equals(reasonResult))
-                    {
-                        var reasonText = reasonResult.ToString();
-                        if (!string.IsNullOrWhiteSpace(reasonText))
-                        {
-                            appointment.RequestReason = reasonText;
-                        }
-                        else
-                        {
-                            // request_reason boşsa, reason enum kolonundan oku
-                            using var enumCommand = connection.CreateCommand();
-                            enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                            var enumResult = await enumCommand.ExecuteScalarAsync();
-                            appointment.RequestReason = enumResult?.ToString() ?? "other";
-                        }
-                    }
-                    else
-                    {
-                        // request_reason null ise, reason enum kolonundan oku
-                        using var enumCommand = connection.CreateCommand();
-                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                        var enumResult = await enumCommand.ExecuteScalarAsync();
-                        appointment.RequestReason = enumResult?.ToString() ?? "other";
-                    }
-                }
-                catch
-                {
-                    // request_reason kolonu yoksa veya hata olursa, reason enum kolonundan oku
-                    try
-                    {
-                        using var enumCommand = connection.CreateCommand();
-                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                        var enumResult = await enumCommand.ExecuteScalarAsync();
-                        appointment.RequestReason = enumResult?.ToString() ?? "other";
-                    }
-                    catch
-                    {
-                        appointment.RequestReason = "other";
-                    }
-                }
-            }
-        }
-        
-        return appointments.OrderByDescending(a => a.Date).ToList();
+        return filteredAppointments.OrderByDescending(a => a.Date).ToList();
     }
 
     public async Task<List<Appointment>> GetPendingAppointmentsByTeacherEmailAsync(string email)
@@ -765,12 +729,12 @@ public class AppointmentService : IAppointmentService
         // Teacher ID ile direkt sorgu yap (daha güvenli)
         var teacherId = teacher.Id;
         
-        // Raw SQL ile pending randevuları al - teacher ID kullan
+        // Raw SQL ile sadece responded_at NULL olan (cevaplanmamış) randevuları al
         var appointmentIds = await _context.Database.SqlQueryRaw<int>(
             $@"SELECT a.""id"" 
                FROM ""appointments"" a
                WHERE a.""instructor_id"" = {teacherId}
-               AND a.""status"" = 'pending'::appointment_status
+               AND a.""responded_at"" IS NULL
                ORDER BY a.""created_at"" DESC"
         ).ToListAsync();
         
@@ -826,40 +790,23 @@ public class AppointmentService : IAppointmentService
                         }
                         else
                         {
-                            // request_reason boşsa, reason enum kolonundan oku
-                            using var enumCommand = connection2.CreateCommand();
-                            enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                            var enumResult = await enumCommand.ExecuteScalarAsync();
-                            appointment.RequestReason = enumResult?.ToString() ?? "other";
-                            System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, RequestReason set to enum: '{appointment.RequestReason}'");
+                            // request_reason boşsa, varsayılan değer
+                            appointment.RequestReason = "Belirtilmemiş";
+                            System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, RequestReason set to default");
                         }
                     }
                     else
                     {
-                        // request_reason null ise, reason enum kolonundan oku
-                        using var enumCommand = connection2.CreateCommand();
-                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                        var enumResult = await enumCommand.ExecuteScalarAsync();
-                        appointment.RequestReason = enumResult?.ToString() ?? "other";
-                        System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, request_reason was null, RequestReason set to enum: '{appointment.RequestReason}'");
+                        // request_reason null ise, varsayılan değer
+                        appointment.RequestReason = "Belirtilmemiş";
+                        System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, request_reason was null, RequestReason set to default");
                     }
                 }
                 catch (Exception ex)
                 {
-                    // request_reason kolonu yoksa veya hata olursa, reason enum kolonundan oku
+                    // request_reason kolonu yoksa veya hata olursa, varsayılan değer
                     System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, Error reading request_reason: {ex.Message}");
-                    try
-                    {
-                        using var enumCommand = connection2.CreateCommand();
-                        enumCommand.CommandText = $"SELECT \"reason\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}";
-                        var enumResult = await enumCommand.ExecuteScalarAsync();
-                        appointment.RequestReason = enumResult?.ToString() ?? "other";
-                        System.Diagnostics.Debug.WriteLine($"GetPendingAppointmentsByTeacherEmailAsync - Appointment ID: {appointment.Id}, RequestReason set to enum (fallback): '{appointment.RequestReason}'");
-                    }
-                    catch
-                    {
-                        appointment.RequestReason = "other";
-                    }
+                    appointment.RequestReason = "Belirtilmemiş";
                 }
             }
         }
@@ -884,21 +831,14 @@ public class AppointmentService : IAppointmentService
         if (appointment == null)
             return null;
 
-        // Status'ü veritabanından oku (enum tipinde)
-        var currentStatus = await _context.Database.SqlQueryRaw<string>(
-            $"SELECT \"status\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}"
-        ).FirstOrDefaultAsync();
-        
-        if (currentStatus?.ToLower() != "pending")
-            throw new InvalidOperationException("Sadece bekleyen randevular onaylanabilir.");
-
+        // Status kolonu yok, direkt onaylıyoruz
         appointment.Status = AppointmentStatus.Approved;
         appointment.UpdatedAt = DateTime.Now;
-        appointment.RejectionReason = null; // Onaylandığında red sebebi temizlenir
+        appointment.RejectionReason = null;
 
-        // status kolonu enum tipinde olduğu için raw SQL ile güncelle
+        // responded_at kolonunu güncelle
         await _context.Database.ExecuteSqlRawAsync(
-            $"UPDATE \"appointments\" SET \"status\" = 'approved'::appointment_status, \"responded_at\" = NOW() WHERE \"id\" = {appointment.Id}");
+            $"UPDATE \"appointments\" SET \"responded_at\" = NOW() WHERE \"id\" = {appointment.Id}");
         
         // scheduled_at'ten Date ve Time'ı yükle
         var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;
@@ -923,29 +863,32 @@ public class AppointmentService : IAppointmentService
 
     public async Task<Appointment?> RejectAppointmentAsync(int id, string? rejectionReason = null)
     {
+        Console.WriteLine($"[DEBUG] RejectAppointmentAsync called - ID: {id}, Reason: {rejectionReason ?? "NULL"}");
+        
         var appointment = await _context.Appointments
             .Include(a => a.Student)
             .Include(a => a.Teacher)
             .FirstOrDefaultAsync(a => a.Id == id);
 
         if (appointment == null)
+        {
+            Console.WriteLine($"[DEBUG] Appointment not found - ID: {id}");
             return null;
+        }
 
-        // Status'ü veritabanından oku (enum tipinde)
-        var currentStatus = await _context.Database.SqlQueryRaw<string>(
-            $"SELECT \"status\"::text FROM \"appointments\" WHERE \"id\" = {appointment.Id}"
-        ).FirstOrDefaultAsync();
-        
-        if (currentStatus?.ToLower() != "pending")
-            throw new InvalidOperationException("Sadece bekleyen randevular reddedilebilir.");
+        Console.WriteLine($"[DEBUG] Found appointment - ID: {id}, Student: {appointment.Student?.Email}, Teacher: {appointment.Teacher?.Email}");
 
+        // Status kolonu yok, direkt reddediyoruz
         appointment.Status = AppointmentStatus.Rejected;
         appointment.UpdatedAt = DateTime.Now;
         appointment.RejectionReason = rejectionReason ?? string.Empty;
 
-        // status kolonu enum tipinde olduğu için raw SQL ile güncelle
-        await _context.Database.ExecuteSqlRawAsync(
-            $"UPDATE \"appointments\" SET \"status\" = 'rejected'::appointment_status, \"responded_at\" = NOW() WHERE \"id\" = {appointment.Id}");
+        // responded_at ve rejection_reason kolonlarını güncelle
+        var escapedReason = (rejectionReason ?? string.Empty).Replace("'", "''");
+        var updateSql = $"UPDATE \"appointments\" SET \"responded_at\" = NOW(), \"rejection_reason\" = '{escapedReason}' WHERE \"id\" = {appointment.Id}";
+        Console.WriteLine($"[DEBUG] Executing SQL: {updateSql}");
+        
+        await _context.Database.ExecuteSqlRawAsync(updateSql);
         
         // scheduled_at'ten Date ve Time'ı yükle
         var scheduledAt = _context.Entry(appointment).Property<DateTime>("ScheduledAt").CurrentValue;

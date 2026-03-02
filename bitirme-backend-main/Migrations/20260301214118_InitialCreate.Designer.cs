@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ApiProject.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260101204631_AddRequestReasonToAppointments")]
-    partial class AddRequestReasonToAppointments
+    [Migration("20260301214118_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -37,6 +37,10 @@ namespace ApiProject.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("created_at");
+
+                    b.Property<string>("RequestReason")
+                        .HasColumnType("text")
+                        .HasColumnName("request_reason");
 
                     b.Property<DateTime>("ScheduledAt")
                         .HasColumnType("timestamp without time zone")

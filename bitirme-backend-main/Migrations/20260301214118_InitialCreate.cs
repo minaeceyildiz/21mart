@@ -7,7 +7,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace ApiProject.Migrations
 {
     /// <inheritdoc />
-    public partial class AddRequestReasonToAppointments : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -76,6 +76,7 @@ namespace ApiProject.Migrations
                     student_id = table.Column<int>(type: "integer", nullable: false),
                     instructor_id = table.Column<int>(type: "integer", nullable: false),
                     course_name = table.Column<string>(type: "text", nullable: false),
+                    request_reason = table.Column<string>(type: "text", nullable: true),
                     created_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false),
                     responded_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: true),
                     scheduled_at = table.Column<DateTime>(type: "timestamp without time zone", nullable: false)

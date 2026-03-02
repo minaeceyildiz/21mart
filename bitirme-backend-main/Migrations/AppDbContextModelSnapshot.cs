@@ -35,6 +35,10 @@ namespace ApiProject.Migrations
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("RequestReason")
+                        .HasColumnType("text")
+                        .HasColumnName("request_reason");
+
                     b.Property<DateTime>("ScheduledAt")
                         .HasColumnType("timestamp without time zone")
                         .HasColumnName("scheduled_at");

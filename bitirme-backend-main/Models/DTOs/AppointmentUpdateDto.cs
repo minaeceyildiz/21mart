@@ -14,5 +14,9 @@ public class AppointmentUpdateDto
 
     // Durum (Hoca için)
     public AppointmentStatus? Status { get; set; }
+    
+    // Red nedeni (Rejected durumunda)
+    [MaxLength(500)]
+    public string? RejectionReason { get; set; }
 }
 

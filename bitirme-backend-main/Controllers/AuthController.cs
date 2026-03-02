@@ -187,6 +187,9 @@ public class AuthController : ControllerBase
     [HttpGet("verify-email")]
     public async Task<IActionResult> VerifyEmail([FromQuery] string token, [FromQuery] int userId)
     {
+        // Frontend URL'ini environment variable'dan al (Docker için)
+        var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL") ?? "http://localhost:3000";
+        
         if (string.IsNullOrEmpty(token) || userId <= 0)
         {
             var errorHtml = @"
@@ -212,7 +215,7 @@ public class AuthController : ControllerBase
                         <h1>Geçersiz Doğrulama İsteği</h1>
                         <p>Doğrulama linki hatalı veya eksik bilgi içeriyor.</p>
                         <p>Lütfen e-postanızdaki doğrulama linkine tekrar tıklayın veya yeni bir doğrulama e-postası isteyin.</p>
-                        <a href='http://localhost:3000' class='button'>Giriş Sayfasına Dön</a>
+                        <a href='{frontendUrl}' class='button'>Giriş Sayfasına Dön</a>
                     </div>
                 </body>
                 </html>";
@@ -250,7 +253,7 @@ public class AuthController : ControllerBase
                             <p><strong>Artık giriş yapabilirsiniz!</strong></p>
                             <p>Kullanıcı adınız ve şifrenizle sisteme giriş yaparak tüm özellikleri kullanmaya başlayabilirsiniz.</p>
                         </div>
-                        <a href='http://localhost:3000' class='button'>Giriş Yap</a>
+                        <a href='{frontendUrl}' class='button'>Giriş Yap</a>
                     </div>
                 </body>
                 </html>";
@@ -288,7 +291,7 @@ public class AuthController : ControllerBase
                         <li>Sunucu yeniden başlatılmış olabilir</li>
                     </ul>
                     <p style='margin-top: 20px;'><strong>Çözüm:</strong> Lütfen tekrar kayıt olun veya destek ekibiyle iletişime geçin.</p>
-                    <a href='http://localhost:3000' class='button'>Giriş Sayfasına Dön</a>
+                    <a href='{frontendUrl}' class='button'>Giriş Sayfasına Dön</a>
                 </div>
             </body>
             </html>";

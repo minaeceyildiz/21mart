@@ -139,7 +139,14 @@ try
     {
         options.AddPolicy("AllowAll", policy =>
         {
-            policy.WithOrigins("http://localhost:3000", "http://localhost:5173", "http://localhost:4200", "http://localhost:8080")
+            policy.WithOrigins(
+                    "http://localhost:3000", 
+                    "http://localhost:5173", 
+                    "http://localhost:4200", 
+                    "http://localhost:8080",
+                    "http://baskent_web",
+                    "http://web"
+                  )
                   .AllowAnyMethod()
                   .AllowAnyHeader()
                   .AllowCredentials(); // SignalR ve cookie desteği için
@@ -155,7 +162,12 @@ try
         app.UseSwaggerUI();
     }
 
-    app.UseHttpsRedirection();
+    // Docker ortamında HTTPS yönlendirmesini devre dışı bırak
+    var disableHttpsRedirection = builder.Configuration.GetValue<bool>("DisableHttpsRedirection", false);
+    if (!disableHttpsRedirection && !app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
 
     app.UseCors("AllowAll");
 
@@ -187,6 +199,7 @@ try
                 }
                 try
                 {
+                    // 1. request_reason kolonunu kontrol et/ekle
                     using var command = connection.CreateCommand();
                     command.CommandText = @"
                         DO $$ 
@@ -205,6 +218,70 @@ try
                     ";
                     await command.ExecuteNonQueryAsync();
                     Console.WriteLine("request_reason kolonu kontrol edildi/eklendi.");
+                    
+                    // 1b. rejection_reason kolonunu kontrol et/ekle
+                    using var rejectionReasonCmd = connection.CreateCommand();
+                    rejectionReasonCmd.CommandText = @"
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1
+                                FROM information_schema.columns
+                                WHERE table_name = 'appointments'
+                                AND column_name = 'rejection_reason'
+                            ) THEN
+                                ALTER TABLE ""appointments""
+                                ADD COLUMN ""rejection_reason"" TEXT;
+                                RAISE NOTICE 'rejection_reason kolonu eklendi.';
+                            END IF;
+                        END $$;
+                    ";
+                    await rejectionReasonCmd.ExecuteNonQueryAsync();
+                    Console.WriteLine("rejection_reason kolonu kontrol edildi/eklendi.");
+                    
+                    // 2. login_type enum'unu kontrol et/düzelt
+                    using var loginTypeCommand = connection.CreateCommand();
+                    loginTypeCommand.CommandText = @"
+                        DO $$ 
+                        BEGIN
+                            -- Önce login_type kolonunun var olup olmadığını kontrol et
+                            IF NOT EXISTS (
+                                SELECT 1 
+                                FROM information_schema.columns 
+                                WHERE table_name = 'users' 
+                                AND column_name = 'login_type'
+                            ) THEN
+                                -- Kolon yoksa oluştur
+                                CREATE TYPE login_type AS ENUM ('school_email', 'staff_id');
+                                ALTER TABLE users ADD COLUMN login_type login_type;
+                                RAISE NOTICE 'login_type kolonu ve enum tipi oluşturuldu.';
+                            ELSE
+                                -- Kolon varsa, enum değerlerini kontrol et
+                                IF EXISTS (
+                                    SELECT 1 
+                                    FROM pg_enum 
+                                    JOIN pg_type ON pg_enum.enumtypid = pg_type.oid 
+                                    WHERE pg_type.typname = 'login_type' 
+                                    AND pg_enum.enumlabel IN ('Student', 'Teacher')
+                                ) THEN
+                                    -- Yanlış enum değerleri varsa düzelt
+                                    RAISE NOTICE 'login_type enum değerleri yanlış, düzeltiliyor...';
+                                    ALTER TABLE users ALTER COLUMN login_type DROP DEFAULT;
+                                    ALTER TABLE users ALTER COLUMN login_type TYPE text USING login_type::text;
+                                    DROP TYPE login_type CASCADE;
+                                    CREATE TYPE login_type AS ENUM ('school_email', 'staff_id');
+                                    ALTER TABLE users ALTER COLUMN login_type TYPE login_type USING 
+                                        CASE 
+                                            WHEN login_type::text IN ('Student', 'Teacher') THEN NULL::login_type
+                                            ELSE login_type::login_type
+                                        END;
+                                    RAISE NOTICE 'login_type enum değerleri düzeltildi.';
+                                END IF;
+                            END IF;
+                        END $$;
+                    ";
+                    await loginTypeCommand.ExecuteNonQueryAsync();
+                    Console.WriteLine("login_type enum kontrol edildi/düzeltildi.");
                 }
                 finally
                 {

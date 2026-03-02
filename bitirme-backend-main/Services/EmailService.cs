@@ -32,9 +32,13 @@ public class EmailService : IEmailService
             var smtpPassword = smtpSettings["Password"] ?? "";
             var smtpFromEmail = smtpSettings["FromEmail"] ?? smtpUsername;
             var smtpFromName = smtpSettings["FromName"] ?? "Başkent Üniversitesi";
-            var baseUrl = smtpSettings["BaseUrl"] ?? "http://localhost:5000";
+            
+            // BaseUrl'i environment variable'dan al (Docker için), yoksa config'den
+            var baseUrl = Environment.GetEnvironmentVariable("APP_BASE_URL") 
+                       ?? smtpSettings["BaseUrl"] 
+                       ?? "http://localhost:5283";
 
-            // Doğrulama linki oluştur
+            // Doğrulama linki oluştur - Backend API endpoint'ine gider
             var verificationLink = $"{baseUrl}/api/auth/verify-email?token={token}&userId={userId}";
 
             // Email içeriği
