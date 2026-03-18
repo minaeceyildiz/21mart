@@ -50,11 +50,10 @@ public class OrderController : ControllerBase
         if (userId == null)
             return Unauthorized();
 
-        var orders = await _orderManagementService.GetMyOrdersAsync(userId.Value);
+        var orders = await _cafeService.GetUserOrdersAsync(userId.Value);
         return Ok(orders);
     }
 
-    // Geriye dönük uyumluluk: eski frontend /Order/my-orders çağırıyordu
     [HttpGet("my-orders")]
     public async Task<ActionResult> GetMyOrdersLegacy()
     {

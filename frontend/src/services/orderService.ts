@@ -6,7 +6,8 @@ export type OrderStatus =
   | "Preparing"
   | "Ready"
   | "Paid"
-  | "Cancelled";
+  | "Cancelled"
+  | "NotPaid";
 
 export interface OrderItemResponseDto {
   id: number;
@@ -28,6 +29,8 @@ export interface OrderResponseDto {
   approvedAt?: string | null;
   readyAt?: string | null;
   paidAt?: string | null;
+  pickupTime?: string | null;
+  note?: string | null;
   orderItems: OrderItemResponseDto[];
 }
 
@@ -84,11 +87,26 @@ export const cashierPaid = async (id: number) => {
   return res.data;
 };
 
+export const cashierNotPaid = async (id: number) => {
+  const res = await apiClient.put<OrderResponseDto>(
+    `/cashier/orders/${id}/notpaid`
+  );
+  return res.data;
+};
+
+export const cashierCancel = async (id: number) => {
+  const res = await apiClient.put<OrderResponseDto>(
+    `/cashier/orders/${id}/cancel`
+  );
+  return res.data;
+};
+
 export const getOrderStatusText = (status: OrderStatus) => {
   if (status === "Received") return "Sipariş alındı";
   if (status === "Approved" || status === "Preparing") return "Siparişiniz hazırlanıyor";
   if (status === "Ready") return "Siparişiniz hazır";
   if (status === "Paid") return "Sipariş teslim edildi / ödendi";
+  if (status === "NotPaid") return "Ödenmedi";
   if (status === "Cancelled") return "İptal edildi";
   return status;
 };

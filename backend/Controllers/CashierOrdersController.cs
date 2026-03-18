@@ -83,5 +83,35 @@ public class CashierOrdersController : ControllerBase
             return BadRequest(new { message = ex.Message });
         }
     }
+
+    [HttpPut("{id:int}/notpaid")]
+    public async Task<ActionResult> NotPaid(int id)
+    {
+        try
+        {
+            var updated = await _orderManagementService.NotPaidAsync(id);
+            if (updated == null) return NotFound();
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:int}/cancel")]
+    public async Task<ActionResult> Cancel(int id)
+    {
+        try
+        {
+            var updated = await _orderManagementService.CancelAsync(id);
+            if (updated == null) return NotFound();
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
 }
 

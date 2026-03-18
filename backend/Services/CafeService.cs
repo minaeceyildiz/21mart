@@ -15,10 +15,12 @@ public interface ICafeService
 public class CafeService : ICafeService
 {
     private readonly AppDbContext _context;
+    private readonly INotificationService _notificationService;
 
-    public CafeService(AppDbContext context)
+    public CafeService(AppDbContext context, INotificationService notificationService)
     {
         _context = context;
+        _notificationService = notificationService;
     }
 
     private static readonly Dictionary<OrderStatus, string> StatusToTurkish = new()
@@ -29,6 +31,7 @@ public class CafeService : ICafeService
         { OrderStatus.Ready, "Hazırlandı" },
         { OrderStatus.Paid, "Teslim Alındı" },
         { OrderStatus.Cancelled, "İptal Edildi" },
+        { OrderStatus.NotPaid, "Ödenmedi" },
     };
 
     public async Task<List<MenuItem>> GetMenuItemsAsync()
@@ -90,6 +93,17 @@ public class CafeService : ICafeService
             .Query()
             .Include(oi => oi.MenuItem)
             .LoadAsync();
+
+        try
+        {
+            await _notificationService.SendNotificationAsync(
+                "Sipariş Alındı",
+                $"#{order.OrderNumber} numaralı siparişiniz alındı. Onay bekleniyor.",
+                NotificationType.OrderReceived,
+                user.Email,
+                userId);
+        }
+        catch { }
 
         return MapToResponseDto(order);
     }

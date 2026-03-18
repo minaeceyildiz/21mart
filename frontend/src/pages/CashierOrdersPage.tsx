@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   cashierApprove,
+  cashierCancel,
+  cashierNotPaid,
   cashierPaid,
   cashierPreparing,
   cashierReady,
@@ -61,6 +63,8 @@ const CashierOrdersPage: React.FC = () => {
   const canPreparing = (s: OrderStatus) => s === "Received" || s === "Approved";
   const canReady = (s: OrderStatus) => s === "Preparing";
   const canPaid = (s: OrderStatus) => s === "Ready";
+  const canNotPaid = (s: OrderStatus) => s === "Ready";
+  const canCancel = (s: OrderStatus) => s !== "Cancelled" && s !== "Paid" && s !== "NotPaid";
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -93,6 +97,7 @@ const CashierOrdersPage: React.FC = () => {
                   <option value="Preparing">PREPARING</option>
                   <option value="Ready">READY</option>
                   <option value="Paid">PAID</option>
+                  <option value="NotPaid">NOT PAID</option>
                   <option value="Cancelled">CANCELLED</option>
                 </select>
               </div>
@@ -158,6 +163,23 @@ const CashierOrdersPage: React.FC = () => {
                       </div>
                     </div>
 
+                    {(o.pickupTime || o.note) && (
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        {o.pickupTime && (
+                          <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                            <span className="text-blue-600 text-sm font-medium">Teslim Saati:</span>
+                            <span className="text-sm text-blue-800 font-semibold">{o.pickupTime}</span>
+                          </div>
+                        )}
+                        {o.note && (
+                          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            <span className="text-amber-600 text-sm font-medium">Not:</span>
+                            <span className="text-sm text-amber-800">{o.note}</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="mt-3">
                       <p className="text-sm font-medium text-slate-700 mb-2">Ürünler</p>
                       <div className="space-y-2">
@@ -211,10 +233,24 @@ const CashierOrdersPage: React.FC = () => {
                         >
                           Ödendi
                         </button>
+                        <button
+                          className="px-3 py-2 rounded-lg text-sm bg-orange-600 text-white disabled:opacity-50"
+                          onClick={() => act(cashierNotPaid, o.id)}
+                          disabled={!canNotPaid(o.status)}
+                        >
+                          Ödenmedi
+                        </button>
+                        <button
+                          className="px-3 py-2 rounded-lg text-sm bg-red-700 text-white disabled:opacity-50"
+                          onClick={() => {
+                            if (window.confirm("Siparişi iptal etmek istediğinize emin misiniz?"))
+                              act(cashierCancel, o.id);
+                          }}
+                          disabled={!canCancel(o.status)}
+                        >
+                          İptal Et
+                        </button>
                       </div>
-                      <p className="text-xs text-slate-500 mt-3">
-                        Kural: Ödendi işaretlemek için sipariş READY olmalı.
-                      </p>
                     </div>
                   </div>
                 </div>

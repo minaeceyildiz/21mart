@@ -24,6 +24,8 @@ public class OrderResponseDto
     public DateTime? ApprovedAt { get; set; }
     public DateTime? ReadyAt { get; set; }
     public DateTime? PaidAt { get; set; }
+    public string? PickupTime { get; set; }
+    public string? Note { get; set; }
     public List<OrderItemResponseDto> OrderItems { get; set; } = new();
 }
 

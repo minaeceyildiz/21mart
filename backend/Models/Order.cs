@@ -58,7 +58,8 @@ public enum OrderStatus
     Preparing = 2,
     Ready = 3,
     Paid = 4,
-    Cancelled = 5
+    Cancelled = 5,
+    NotPaid = 6
 }
 
 public enum OrderUserType

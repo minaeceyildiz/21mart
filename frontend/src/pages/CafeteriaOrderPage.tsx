@@ -23,7 +23,8 @@ type OrderStatus =
   | "Hazırlanıyor"
   | "Hazırlandı"
   | "Teslim Alındı"
-  | "İptal Edildi";
+  | "İptal Edildi"
+  | "Ödenmedi";
 
 interface OrderItem {
   menuItemId: number;
@@ -98,6 +99,7 @@ const statusStyles: Record<string, string> = {
   Hazırlandı: "bg-blue-100 text-blue-800 border border-blue-200",
   "Teslim Alındı": "bg-green-100 text-green-800 border border-green-200",
   "İptal Edildi": "bg-red-100 text-red-800 border border-red-200",
+  Ödenmedi: "bg-rose-100 text-rose-800 border border-rose-200",
 };
 
 const CART_STORAGE_KEY = "cafeteria_cart";
@@ -238,13 +240,12 @@ const CafeteriaOrderPage: React.FC = () => {
     return menuItems.filter((item) => item.category === selectedCategory);
   }, [menuItems, selectedCategory, searchTerm]);
 
+  const pastStatuses: OrderStatus[] = ["Teslim Alındı", "İptal Edildi", "Ödenmedi"];
   const activeOrders = orders.filter(
-    (order) =>
-      order.status !== "Teslim Alındı" && order.status !== "İptal Edildi",
+    (order) => !pastStatuses.includes(order.status),
   );
   const pastOrders = orders.filter(
-    (order) =>
-      order.status === "Teslim Alındı" || order.status === "İptal Edildi",
+    (order) => pastStatuses.includes(order.status),
   );
 
   const handleAddToCart = (item: MenuItem) => {

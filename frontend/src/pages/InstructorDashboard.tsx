@@ -75,14 +75,6 @@ const InstructorDashboard: React.FC = () => {
             </p>
           </button>
 
-          <button
-            onClick={() => navigate("/siparislerim")}
-            className="text-left bg-white rounded-2xl border p-6 shadow hover:shadow-lg transition"
-          >
-            <h3 className="text-lg font-semibold mb-2">Siparişlerim</h3>
-            <p className="text-slate-600">Verdiğiniz siparişlerin durumunu takip edin.</p>
-          </button>
-
           <div className="bg-white rounded-2xl border p-6 shadow">
             <h3 className="text-lg font-semibold mb-2">Otopark Durumu</h3>
             <p className="text-slate-600">

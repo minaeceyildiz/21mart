@@ -20,6 +20,13 @@ public enum NotificationType
     AppointmentConfirmed = 1,
     AppointmentCancelled = 2,
     AppointmentReminder = 3,
-    General = 4
+    General = 4,
+    OrderReceived = 10,
+    OrderApproved = 11,
+    OrderPreparing = 12,
+    OrderReady = 13,
+    OrderPaid = 14,
+    OrderNotPaid = 15,
+    OrderCancelled = 16
 }
 
