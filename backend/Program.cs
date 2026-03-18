@@ -8,6 +8,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using Serilog;
 using ApiProject.Hubs;
+using System.Text.Json.Serialization;
 
 // Serilog yapılandırması
 Log.Logger = new LoggerConfiguration()
@@ -30,6 +31,8 @@ try
         .AddJsonOptions(options =>
         {
             options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+            // Frontend'in status/role gibi enum alanlarını string olarak beklemesi için
+            options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(options =>
