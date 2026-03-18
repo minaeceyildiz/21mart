@@ -8,6 +8,7 @@ namespace ApiProject.Controllers;
 
 [ApiController]
 [Route("api/orders")]
+[Route("api/Order")]
 [Authorize]
 public class OrderController : ControllerBase
 {
@@ -51,6 +52,13 @@ public class OrderController : ControllerBase
 
         var orders = await _orderManagementService.GetMyOrdersAsync(userId.Value);
         return Ok(orders);
+    }
+
+    // Geriye dönük uyumluluk: eski frontend /Order/my-orders çağırıyordu
+    [HttpGet("my-orders")]
+    public async Task<ActionResult> GetMyOrdersLegacy()
+    {
+        return await GetMyOrders();
     }
 
     private int? GetCurrentUserId()

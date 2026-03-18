@@ -9,6 +9,7 @@ import InstructorAppointmentManagementPage from "./pages/InstructorAppointmentMa
 import CafeteriaOrderPage from "./pages/CafeteriaOrderPage";
 import MyOrdersPage from "./pages/MyOrdersPage";
 import CashierOrdersPage from "./pages/CashierOrdersPage";
+import LibraryOccupancyPage from "./pages/LibraryOccupancyPage";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
         <Route path="/kafeterya" element={<CafeteriaOrderPage />} />
         <Route path="/siparislerim" element={<MyOrdersPage />} />
         <Route path="/kasiyer/siparisler" element={<CashierOrdersPage />} />
+        <Route path="/kutuphane" element={<LibraryOccupancyPage />} />
       </Routes>
     </Router>
   );

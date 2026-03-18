@@ -37,6 +37,12 @@ public class Order
     [Required]
     [Column(TypeName = "decimal(10,2)")]
     public decimal TotalAmount { get; set; }
+
+    [MaxLength(500)]
+    public string? Note { get; set; }
+
+    [MaxLength(10)]
+    public string? PickupTime { get; set; }
     
     // Navigation Properties
     [ForeignKey("UserId")]

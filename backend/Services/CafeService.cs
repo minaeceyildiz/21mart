@@ -8,8 +8,8 @@ namespace ApiProject.Services;
 public interface ICafeService
 {
     Task<List<MenuItem>> GetMenuItemsAsync();
-    Task<Order> CreateOrderAsync(int userId, CreateOrderDto createOrderDto);
-    Task<List<Order>> GetUserOrdersAsync(int userId);
+    Task<CafeteriaOrderResponseDto> CreateOrderAsync(int userId, CreateOrderDto createOrderDto);
+    Task<List<CafeteriaOrderResponseDto>> GetUserOrdersAsync(int userId);
 }
 
 public class CafeService : ICafeService
@@ -21,6 +21,16 @@ public class CafeService : ICafeService
         _context = context;
     }
 
+    private static readonly Dictionary<OrderStatus, string> StatusToTurkish = new()
+    {
+        { OrderStatus.Received, "Onaylanması Bekleniyor" },
+        { OrderStatus.Approved, "Hazırlanıyor" },
+        { OrderStatus.Preparing, "Hazırlanıyor" },
+        { OrderStatus.Ready, "Hazırlandı" },
+        { OrderStatus.Paid, "Teslim Alındı" },
+        { OrderStatus.Cancelled, "İptal Edildi" },
+    };
+
     public async Task<List<MenuItem>> GetMenuItemsAsync()
     {
         return await _context.MenuItems
@@ -29,14 +39,12 @@ public class CafeService : ICafeService
             .ToListAsync();
     }
 
-    public async Task<Order> CreateOrderAsync(int userId, CreateOrderDto createOrderDto)
+    public async Task<CafeteriaOrderResponseDto> CreateOrderAsync(int userId, CreateOrderDto createOrderDto)
     {
-        // Kullanıcının var olduğunu kontrol et
         var user = await _context.Users.FindAsync(userId);
         if (user == null)
             throw new InvalidOperationException("Kullanıcı bulunamadı.");
 
-        // Menü öğelerini kontrol et ve toplam tutarı hesapla
         decimal totalAmount = 0;
         var orderItems = new List<OrderItem>();
 
@@ -53,14 +61,13 @@ public class CafeService : ICafeService
             {
                 MenuItemId = itemDto.MenuItemId,
                 Quantity = itemDto.Quantity,
-                Price = menuItem.Price // O anki fiyatı kaydet
+                Price = menuItem.Price
             };
 
             totalAmount += menuItem.Price * itemDto.Quantity;
             orderItems.Add(orderItem);
         }
 
-        // Siparişi oluştur
         var order = new Order
         {
             UserId = userId,
@@ -70,30 +77,68 @@ public class CafeService : ICafeService
             Status = OrderStatus.Received,
             IsPaid = false,
             TotalAmount = totalAmount,
+            PickupTime = createOrderDto.PickupTime,
+            Note = createOrderDto.Note,
             OrderItems = orderItems
         };
 
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
 
-        // İlişkili verileri yükle
         await _context.Entry(order)
             .Collection(o => o.OrderItems)
             .Query()
             .Include(oi => oi.MenuItem)
             .LoadAsync();
 
-        return order;
+        return MapToResponseDto(order);
     }
 
-    public async Task<List<Order>> GetUserOrdersAsync(int userId)
+    public async Task<List<CafeteriaOrderResponseDto>> GetUserOrdersAsync(int userId)
     {
-        return await _context.Orders
+        var orders = await _context.Orders
             .Where(o => o.UserId == userId)
             .Include(o => o.OrderItems)
-                .ThenInclude(oi => oi.MenuItem)
+            .ThenInclude(oi => oi.MenuItem)
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
+
+        return orders.Select(MapToResponseDto).ToList();
+    }
+
+    private CafeteriaOrderResponseDto MapToResponseDto(Order order)
+    {
+        var now = DateTime.UtcNow;
+        var diff = now - order.CreatedAt;
+        string createdAt;
+
+        if (diff.TotalMinutes < 1)
+            createdAt = "Az önce";
+        else if (diff.TotalMinutes < 60)
+            createdAt = $"{(int)diff.TotalMinutes} dk önce";
+        else if (diff.TotalHours < 24)
+            createdAt = $"Bugün, {order.CreatedAt.ToLocalTime():HH:mm}";
+        else if (diff.TotalHours < 48)
+            createdAt = $"Dün, {order.CreatedAt.ToLocalTime():HH:mm}";
+        else
+            createdAt = order.CreatedAt.ToLocalTime().ToString("dd.MM.yyyy, HH:mm");
+
+        return new CafeteriaOrderResponseDto
+        {
+            Id = order.Id,
+            Items = order.OrderItems.Select(oi => new CafeteriaOrderItemResponseDto
+            {
+                MenuItemId = oi.MenuItemId,
+                Name = oi.MenuItem?.Name ?? "Bilinmeyen Ürün",
+                Quantity = oi.Quantity,
+                Price = oi.Price
+            }).ToList(),
+            TotalPrice = order.TotalAmount,
+            PickupTime = order.PickupTime ?? "",
+            Note = order.Note,
+            Status = StatusToTurkish.GetValueOrDefault(order.Status, "Bilinmeyen"),
+            CreatedAt = createdAt
+        };
     }
 
     private static string GenerateOrderNumber()
@@ -105,4 +150,3 @@ public class CafeService : ICafeService
         return $"{utcNow:yyyyMMdd-HHmmss}-{suffix}";
     }
 }
-
