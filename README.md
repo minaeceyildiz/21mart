@@ -1,46 +1,122 @@
-# Getting Started with Create React App
+# Baskent Yasam - University Platform
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+A comprehensive university life platform for Baskent University students and staff.
 
-## Available Scripts
+## Quick Start (Docker)
 
-In the project directory, you can run:
+### Prerequisites
+- Docker Desktop installed
+- Git
 
-### `npm start`
+### Setup Steps
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+1. **Clone the repository**
+   ```bash
+   git clone <repo-url>
+   cd baskent-yasam
+   ```
 
-The page will reload if you make edits.\
-You will also see any lint errors in the console.
+2. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your real values (SMTP credentials, JWT secret, etc.)
+   ```
 
-### `npm test`
+3. **Run with Docker**
+   ```bash
+   docker-compose up --build
+   ```
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+4. **Access the application**
+   - Frontend: http://localhost:3000
+   - API: http://localhost:5283/api
+   - Swagger: http://localhost:5283/swagger
+   - Database: localhost:5432
 
-### `npm run build`
+## Project Structure
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+```
+/baskent-yasam/
+├── README.md                    # This file
+├── docker-compose.yml           # Container orchestration
+├── .env.example                 # Environment variables template
+├── BaskentYasam.sln             # .NET Solution file
+│
+├── docs/                        # Documentation
+│   ├── docker-setup.md          # Docker setup guide
+│   ├── database-setup.md        # Database setup guide
+│   ├── testing-guide.md         # Testing guide
+│   └── ...
+│
+├── backend/                     # .NET API
+│   ├── ApiProject.csproj
+│   ├── Program.cs
+│   ├── appsettings.json
+│   ├── Dockerfile
+│   ├── Controllers/
+│   ├── Services/
+│   ├── Models/
+│   ├── Data/
+│   ├── Hubs/                    # SignalR Hubs
+│   ├── Migrations/
+│   └── scripts/                 # SQL scripts
+│       ├── setup_database.sql
+│       ├── migrations/
+│       └── checks/
+│
+└── frontend/                    # React Frontend
+    ├── package.json
+    ├── Dockerfile
+    ├── nginx.conf
+    ├── public/
+    └── src/
+```
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## Features
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- User authentication with email verification
+- Role-based access control (Student, Academic Staff, Admin)
+- Appointment booking system
+- Cafeteria ordering system
+- Real-time notifications (SignalR)
+- Instructor schedule management
 
-### `npm run eject`
+## Development
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+### Local Development (without Docker)
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+**Backend:**
+```bash
+cd backend
+dotnet run
+```
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm start
+```
 
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
+### Environment Variables
 
-## Learn More
+See `.env.example` for all available environment variables.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## Documentation
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+- [Docker Setup](docs/docker-setup.md)
+- [Database Setup](docs/database-setup.md)
+- [Testing Guide](docs/testing-guide.md)
+- [Team Instructions](docs/team-instructions.md)
+
+## Tech Stack
+
+- **Frontend:** React 19, TypeScript, Tailwind CSS
+- **Backend:** .NET 8, ASP.NET Core Web API
+- **Database:** PostgreSQL 16
+- **Real-time:** SignalR
+- **Containerization:** Docker, Docker Compose
+
+## License
+
+This project is for educational purposes at Baskent University.

@@ -2,9 +2,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "bitirme-backend-main", "bitirme-backend-main", "{98004296-3AC1-9FA2-C784-8F9EEC30E6EC}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{98004296-3AC1-9FA2-C784-8F9EEC30E6EC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiProject", "bitirme-backend-main\ApiProject.csproj", "{887A9E45-8554-2EBF-A582-FC8AA50501E3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ApiProject", "backend\ApiProject.csproj", "{887A9E45-8554-2EBF-A582-FC8AA50501E3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -1,1 +1,0 @@
-["role_id (integer / int4)","id (integer / int4)","login_type (USER-DEFINED / login_type)","staff_id (character varying / varchar)","password_hash (text / text)","full_name (character varying / varchar)","email (character varying / varchar)"]

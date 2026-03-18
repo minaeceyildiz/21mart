@@ -184,20 +184,13 @@ public class AuthService : IAuthService
             // Önce Entity Framework ile ekle
             _context.Users.Add(user);
             await _context.SaveChangesAsync();
-            
-            // Sonra login_type'ı NULL yap (CAST ile)
-            using var connection = _context.Database.GetDbConnection();
-            await connection.OpenAsync();
-            
-            using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE users SET login_type = CAST(NULL AS login_type) WHERE id = @userId";
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@userId";
-            parameter.Value = user.Id;
-            command.Parameters.Add(parameter);
-            
-            await command.ExecuteNonQueryAsync();
-            
+
+            // Sonra login_type'ı NULL yap (ExecuteSqlRawAsync ile)
+            await _context.Database.ExecuteSqlRawAsync(
+                "UPDATE users SET login_type = CAST(NULL AS login_type) WHERE id = {0}",
+                user.Id
+            );
+
             _logger.LogInformation($"Yeni kullanıcı kaydedildi (doğrulanmamış): UserId={user.Id}, Email={user.Email}");
         }
         catch (Exception ex)

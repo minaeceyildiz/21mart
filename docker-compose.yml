@@ -3,32 +3,38 @@ services:
     image: postgres:16-alpine
     container_name: baskent_db
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 1234
-      POSTGRES_DB: oys3
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-1234}
+      POSTGRES_DB: ${POSTGRES_DB:-oys3}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d oys3"]
+      test: [ "CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-oys3}" ]
       interval: 5s
       timeout: 3s
       retries: 20
 
   api:
     build:
-      context: ./bitirme-backend-main
+      context: ./backend
     container_name: baskent_api
     depends_on:
       db:
         condition: service_healthy
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=oys3;Username=postgres;Password=1234
-      DisableHttpsRedirection: "true"
-      APP_BASE_URL: "http://localhost:5283"
-      FRONTEND_URL: "http://localhost:3000"
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-oys3};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-1234}
+      Jwt__SecretKey: ${JWT_SECRET_KEY:-YourSuperSecretKeyThatIsAtLeast32CharactersLong12345}
+      EmailSettings__Password: ${SMTP_PASSWORD:-fisfrspwzzjxtvei}
+      EmailSettings__From: ${SMTP_FROM_EMAIL:-yasambaskent@gmail.com}
+      Smtp__Password: ${SMTP_PASSWORD:-fisfrspwzzjxtvei}
+      Smtp__Username: ${SMTP_USERNAME:-yasambaskent@gmail.com}
+      Smtp__FromEmail: ${SMTP_FROM_EMAIL:-yasambaskent@gmail.com}
+      DisableHttpsRedirection: ${DISABLE_HTTPS_REDIRECTION:-true}
+      APP_BASE_URL: ${API_BASE_URL:-http://localhost:5283}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
       - "5283:8080"
     volumes:
