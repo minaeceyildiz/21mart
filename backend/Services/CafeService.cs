@@ -8,8 +8,8 @@ namespace ApiProject.Services;
 public interface ICafeService
 {
     Task<List<MenuItem>> GetMenuItemsAsync();
-    Task<Order> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto);
-    Task<List<Order>> GetStudentOrdersAsync(int studentId);
+    Task<Order> CreateOrderAsync(int userId, CreateOrderDto createOrderDto);
+    Task<List<Order>> GetUserOrdersAsync(int userId);
 }
 
 public class CafeService : ICafeService
@@ -29,12 +29,12 @@ public class CafeService : ICafeService
             .ToListAsync();
     }
 
-    public async Task<Order> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto)
+    public async Task<Order> CreateOrderAsync(int userId, CreateOrderDto createOrderDto)
     {
-        // Öğrencinin var olduğunu kontrol et
-        var student = await _context.Users.FindAsync(studentId);
-        if (student == null)
-            throw new InvalidOperationException("Öğrenci bulunamadı.");
+        // Kullanıcının var olduğunu kontrol et
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+            throw new InvalidOperationException("Kullanıcı bulunamadı.");
 
         // Menü öğelerini kontrol et ve toplam tutarı hesapla
         decimal totalAmount = 0;
@@ -63,9 +63,12 @@ public class CafeService : ICafeService
         // Siparişi oluştur
         var order = new Order
         {
-            StudentId = studentId,
-            OrderDate = DateTime.UtcNow,
-            Status = OrderStatus.Pending,
+            UserId = userId,
+            UserType = user.Role == UserRole.Student ? OrderUserType.Student : OrderUserType.Staff,
+            CreatedAt = DateTime.UtcNow,
+            OrderNumber = GenerateOrderNumber(),
+            Status = OrderStatus.Received,
+            IsPaid = false,
             TotalAmount = totalAmount,
             OrderItems = orderItems
         };
@@ -83,14 +86,23 @@ public class CafeService : ICafeService
         return order;
     }
 
-    public async Task<List<Order>> GetStudentOrdersAsync(int studentId)
+    public async Task<List<Order>> GetUserOrdersAsync(int userId)
     {
         return await _context.Orders
-            .Where(o => o.StudentId == studentId)
+            .Where(o => o.UserId == userId)
             .Include(o => o.OrderItems)
                 .ThenInclude(oi => oi.MenuItem)
-            .OrderByDescending(o => o.OrderDate)
+            .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
+    }
+
+    private static string GenerateOrderNumber()
+    {
+        // Basit, okunabilir ve çakışma riski düşük bir sipariş numarası.
+        // Örn: 20260318-143012-4821
+        var utcNow = DateTime.UtcNow;
+        var suffix = Random.Shared.Next(1000, 9999);
+        return $"{utcNow:yyyyMMdd-HHmmss}-{suffix}";
     }
 }
 

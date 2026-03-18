@@ -3,7 +3,7 @@ import apiClient from '../api/axios';
 export interface LoginRequest {
   username: string;
   password: string;
-  role?: 'student' | 'instructor';
+  role?: 'student' | 'instructor' | 'cashier';
 }
 
 // Backend'den gelen response formatı
@@ -20,7 +20,7 @@ export interface LoginResponse {
   user: {
     id: string;
     username: string;
-    role: 'student' | 'instructor';
+    role: 'student' | 'instructor' | 'cashier';
     name?: string;
   };
 }
@@ -47,9 +47,11 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
       password: credentials.password,
     };
 
-    // Role'ü backend formatına çevir (student -> Student, instructor -> Teacher)
+    // Role'ü backend formatına çevir (student -> Student, instructor -> Teacher, cashier -> Staff)
     if (credentials.role) {
-      requestBody.role = credentials.role === 'instructor' ? 'Teacher' : 'Student';
+      if (credentials.role === 'instructor') requestBody.role = 'Teacher';
+      else if (credentials.role === 'cashier') requestBody.role = 'Staff';
+      else requestBody.role = 'Student';
     }
 
     console.log('Login request body:', requestBody); // Debug için
@@ -65,12 +67,14 @@ export const login = async (credentials: LoginRequest): Promise<LoginResponse> =
     // Role'ü küçük harfe çevir ve normalize et
     // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
     const roleLower = (backendData.role || '').toLowerCase();
-    let normalizedRole: 'student' | 'instructor';
+    let normalizedRole: 'student' | 'instructor' | 'cashier';
 
     if (roleLower === 'teacher' || roleLower === 'instructor') {
       normalizedRole = 'instructor';
+    } else if (roleLower === 'staff' || roleLower === 'admin') {
+      normalizedRole = 'cashier';
     } else {
-      normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
+      normalizedRole = 'student';
     }
 
     console.log('Normalized role:', normalizedRole); // Debug için
@@ -142,12 +146,14 @@ export const register = async (payload: RegisterRequest): Promise<LoginResponse>
     // Role'ü küçük harfe çevir ve normalize et
     // Backend'den "Student", "Teacher", "Staff", "Admin" gelebilir
     const roleLower = (backendData.role || '').toLowerCase();
-    let normalizedRole: 'student' | 'instructor';
+    let normalizedRole: 'student' | 'instructor' | 'cashier';
 
     if (roleLower === 'teacher' || roleLower === 'instructor') {
       normalizedRole = 'instructor';
+    } else if (roleLower === 'staff' || roleLower === 'admin') {
+      normalizedRole = 'cashier';
     } else {
-      normalizedRole = 'student'; // Student, Staff, Admin veya diğerleri için student
+      normalizedRole = 'student';
     }
 
     console.log('Normalized role (register):', normalizedRole); // Debug için

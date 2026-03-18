@@ -45,7 +45,7 @@ public class OrderCleanupService : BackgroundService
         var cutoffTime = DateTime.UtcNow.AddMinutes(-30);
         
         var oldReadyOrders = await context.Orders
-            .Where(o => o.Status == OrderStatus.Ready && o.OrderDate <= cutoffTime)
+            .Where(o => o.Status == OrderStatus.Ready && o.CreatedAt <= cutoffTime)
             .ToListAsync();
 
         if (oldReadyOrders.Any())
@@ -53,8 +53,8 @@ public class OrderCleanupService : BackgroundService
             foreach (var order in oldReadyOrders)
             {
                 order.Status = OrderStatus.Cancelled;
-                _logger.LogInformation("Sipariş iptal edildi. OrderId: {OrderId}, ÖğrenciId: {StudentId}, Hazır Olma Tarihi: {OrderDate}", 
-                    order.Id, order.StudentId, order.OrderDate);
+                _logger.LogInformation("Sipariş iptal edildi. OrderId: {OrderId}, UserId: {UserId}, Tarih: {CreatedAt}", 
+                    order.Id, order.UserId, order.CreatedAt);
             }
 
             await context.SaveChangesAsync();

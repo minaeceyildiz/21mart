@@ -7,15 +7,17 @@ using System.Security.Claims;
 namespace ApiProject.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/orders")]
 [Authorize]
 public class OrderController : ControllerBase
 {
     private readonly ICafeService _cafeService;
+    private readonly IOrderManagementService _orderManagementService;
 
-    public OrderController(ICafeService cafeService)
+    public OrderController(ICafeService cafeService, IOrderManagementService orderManagementService)
     {
         _cafeService = cafeService;
+        _orderManagementService = orderManagementService;
     }
 
     [HttpPost]
@@ -40,14 +42,14 @@ public class OrderController : ControllerBase
         }
     }
 
-    [HttpGet("my-orders")]
+    [HttpGet("my")]
     public async Task<ActionResult> GetMyOrders()
     {
         var userId = GetCurrentUserId();
         if (userId == null)
             return Unauthorized();
 
-        var orders = await _cafeService.GetStudentOrdersAsync(userId.Value);
+        var orders = await _orderManagementService.GetMyOrdersAsync(userId.Value);
         return Ok(orders);
     }
 

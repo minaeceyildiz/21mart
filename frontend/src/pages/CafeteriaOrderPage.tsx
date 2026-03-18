@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { getCurrentUser } from "../services/authService";
+import { createOrder } from "../services/orderService";
 
 interface MenuItem {
   id: number;
@@ -10,7 +11,7 @@ interface MenuItem {
 }
 
 const CafeteriaOrderPage: React.FC = () => {
-  const navigate = useNavigate();
+  useNavigate();
   const user = getCurrentUser();
   const isStudent = user?.role === "student";
 
@@ -78,26 +79,31 @@ const CafeteriaOrderPage: React.FC = () => {
       return;
     }
 
-    const order = {
-      items: selectedItems.map((si) => ({
-        menuItemId: si.item.id,
-        name: si.item.name,
-        quantity: si.quantity,
-        price: si.item.price,
-      })),
-      totalPrice,
-      selectedTime,
-      note,
-    };
+    (async () => {
+      try {
+        const payload = {
+          orderItems: selectedItems.map((si) => ({
+            menuItemId: si.item.id,
+            quantity: si.quantity,
+          })),
+        };
 
-    console.log("Sipariş:", order);
-    // TODO: Backend'e sipariş gönder
-    alert("Siparişiniz alındı!");
-    
-    // Sepeti temizle
-    setSelectedItems([]);
-    setSelectedTime("");
-    setNote("");
+        const created = await createOrder(payload);
+        const orderNumber = created?.orderNumber || created?.OrderNumber;
+        alert(orderNumber ? `Siparişiniz alındı! No: ${orderNumber}` : "Siparişiniz alındı!");
+
+        // Sepeti temizle
+        setSelectedItems([]);
+        setSelectedTime("");
+        setNote("");
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.message ||
+          "Sipariş oluşturulurken hata oluştu.";
+        alert(msg);
+      }
+    })();
   };
 
   // Saat seçenekleri (ileriki saatler için)

@@ -7,6 +7,8 @@ import InstructorDashboard from "./pages/InstructorDashboard";
 import TeacherAppointmentPage from "./pages/TeacherAppointmentPage";
 import InstructorAppointmentManagementPage from "./pages/InstructorAppointmentManagementPage";
 import CafeteriaOrderPage from "./pages/CafeteriaOrderPage";
+import MyOrdersPage from "./pages/MyOrdersPage";
+import CashierOrdersPage from "./pages/CashierOrdersPage";
 
 function App() {
   return (
@@ -22,6 +24,8 @@ function App() {
           element={<InstructorAppointmentManagementPage />}
         />
         <Route path="/kafeterya" element={<CafeteriaOrderPage />} />
+        <Route path="/siparislerim" element={<MyOrdersPage />} />
+        <Route path="/kasiyer/siparisler" element={<CashierOrdersPage />} />
       </Routes>
     </Router>
   );

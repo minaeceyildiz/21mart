@@ -7,7 +7,7 @@ const LoginPage: React.FC = () => {
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<"student" | "instructor">("student");
+  const [role, setRole] = useState<"student" | "instructor" | "cashier">("student");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [showError, setShowError] = useState(false);
@@ -43,7 +43,13 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await login({ username, password, role });
+      // Kasiyer kısayolu: kullanıcı adı/şifre bu ise otomatik kasiyer rolüyle login dene
+      const isCashierShortcut =
+        username.trim().toLowerCase() === "kasiyer" && password === "123456";
+
+      const roleToUse = isCashierShortcut ? "cashier" : role;
+
+      const response = await login({ username, password, role: roleToUse });
 
       console.log('Login response:', response); // Debug için
       console.log('User role:', response.user.role); // Debug için
@@ -59,13 +65,17 @@ const LoginPage: React.FC = () => {
       } else if (userRole === "instructor") {
         console.log('Navigating to /ogretim-elemani'); // Debug için
         navigate("/ogretim-elemani", { replace: true });
+      } else if (userRole === "cashier") {
+        navigate("/kasiyer/siparisler", { replace: true });
       } else {
         // Eğer role belirlenemezse, seçilen role göre yönlendir
         console.log('Role not determined, using selected role:', role); // Debug için
         if (role === "student") {
           navigate("/ogrenci", { replace: true });
-        } else {
+        } else if (role === "instructor") {
           navigate("/ogretim-elemani", { replace: true });
+        } else {
+          navigate("/kasiyer/siparisler", { replace: true });
         }
       }
     } catch (err) {
@@ -94,7 +104,7 @@ const LoginPage: React.FC = () => {
         name,
         email,
         password,
-        role,
+        role: role === "cashier" ? "student" : role,
         studentNo: role === "student" ? undefined : undefined,
       });
 
@@ -122,13 +132,17 @@ const LoginPage: React.FC = () => {
       } else if (userRole === "instructor") {
         console.log('Navigating to /ogretim-elemani (register)'); // Debug için
         navigate("/ogretim-elemani", { replace: true });
+      } else if (userRole === "cashier") {
+        navigate("/kasiyer/siparisler", { replace: true });
       } else {
         // Eğer role belirlenemezse, seçilen role göre yönlendir
         console.log('Role not determined, using selected role (register):', role); // Debug için
         if (role === "student") {
           navigate("/ogrenci", { replace: true });
-        } else {
+        } else if (role === "instructor") {
           navigate("/ogretim-elemani", { replace: true });
+        } else {
+          navigate("/kasiyer/siparisler", { replace: true });
         }
       }
     } catch (err) {
@@ -245,11 +259,12 @@ const LoginPage: React.FC = () => {
 
         <select
           value={role}
-          onChange={(e) => setRole(e.target.value as "student" | "instructor")}
+          onChange={(e) => setRole(e.target.value as "student" | "instructor" | "cashier")}
           className="border rounded-lg px-4 py-2"
         >
           <option value="student">Öğrenci</option>
           <option value="instructor">Akademik Personel</option>
+          {!isSignup && <option value="cashier">Kasiyer</option>}
         </select>
          <div className="text-right mt-2">
           <span className="text-sm text-blue-600 cursor-pointer hover:underline">

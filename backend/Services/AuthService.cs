@@ -63,42 +63,48 @@ public class AuthService : IAuthService
         // Email doğrulama kontrolü
         // login_type veritabanında PostgreSQL ENUM (NULL, 'school_email', 'staff_id')
         // Ham SQL ile kontrol yapıyoruz
-        try
+        //
+        // ÖZEL DURUM: Kasiyer hesabı (tek hesap) için email doğrulaması zorunlu değil.
+        // Bu yüzden Name = "kasiyer" ve Role = Staff ise bu kontrolü atlıyoruz.
+        if (!(user.Name.ToLower().Trim() == "kasiyer" && user.Role == UserRole.Staff))
         {
-            // ExecuteSqlRaw yerine doğrudan bağlantı üzerinden scalar değer okuyalım
-            using var connection = _context.Database.GetDbConnection();
-            await connection.OpenAsync();
-            
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT login_type::text FROM users WHERE id = @userId";
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@userId";
-            parameter.Value = user.Id;
-            command.Parameters.Add(parameter);
-            
-            var loginType = await command.ExecuteScalarAsync();
-            var loginTypeString = loginType?.ToString() ?? string.Empty;
-            
-            _logger.LogInformation($"Login attempt - UserId: {user.Id}, Email: {user.Email}, LoginType: '{loginTypeString}'");
-            
-            // login_type NULL veya boş ise doğrulanmamış demektir
-            if (string.IsNullOrWhiteSpace(loginTypeString))
+            try
             {
-                _logger.LogWarning($"Email doğrulanmamış kullanıcı giriş denemesi: {user.Email}");
-                throw new UnauthorizedAccessException("Lütfen e-posta adresinizi doğrulayın. Kayıt sırasında gönderilen e-postadaki linke tıklayınız.");
+                // ExecuteSqlRaw yerine doğrudan bağlantı üzerinden scalar değer okuyalım
+                using var connection = _context.Database.GetDbConnection();
+                await connection.OpenAsync();
+                
+                using var command = connection.CreateCommand();
+                command.CommandText = "SELECT login_type::text FROM users WHERE id = @userId";
+                var parameter = command.CreateParameter();
+                parameter.ParameterName = "@userId";
+                parameter.Value = user.Id;
+                command.Parameters.Add(parameter);
+                
+                var loginType = await command.ExecuteScalarAsync();
+                var loginTypeString = loginType?.ToString() ?? string.Empty;
+                
+                _logger.LogInformation($"Login attempt - UserId: {user.Id}, Email: {user.Email}, LoginType: '{loginTypeString}'");
+                
+                // login_type NULL veya boş ise doğrulanmamış demektir
+                if (string.IsNullOrWhiteSpace(loginTypeString))
+                {
+                    _logger.LogWarning($"Email doğrulanmamış kullanıcı giriş denemesi: {user.Email}");
+                    throw new UnauthorizedAccessException("Lütfen e-posta adresinizi doğrulayın. Kayıt sırasında gönderilen e-postadaki linke tıklayınız.");
+                }
+                
+                _logger.LogInformation($"Email doğrulaması başarılı: {user.Email}");
             }
-            
-            _logger.LogInformation($"Email doğrulaması başarılı: {user.Email}");
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // UnauthorizedAccessException'ı yukarı fırlat
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, $"login_type kontrolü sırasında hata: {user.Email}");
-            throw new UnauthorizedAccessException("Giriş kontrolü sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
+            catch (UnauthorizedAccessException)
+            {
+                // UnauthorizedAccessException'ı yukarı fırlat
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"login_type kontrolü sırasında hata: {user.Email}");
+                throw new UnauthorizedAccessException("Giriş kontrolü sırasında bir hata oluştu. Lütfen daha sonra tekrar deneyin.");
+            }
         }
 
         // AppDbContext.cs'de role_id değeri otomatik olarak enum'a çevriliyor (role_id - 1)

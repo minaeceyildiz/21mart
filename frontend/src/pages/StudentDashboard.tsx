@@ -77,6 +77,19 @@ const StudentDashboard: React.FC = () => {
               </p>
             </section>
 
+            {/* Siparişlerim */}
+            <section
+              onClick={() => navigate("/siparislerim")}
+              className="bg-white rounded-2xl border border-slate-200 p-6 shadow hover:shadow-lg transition min-h-[150px] cursor-pointer"
+            >
+              <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                Siparişlerim
+              </h3>
+              <p className="text-slate-600 text-base">
+                Verdiğiniz siparişlerin durumunu takip edin.
+              </p>
+            </section>
+
             {/* Otopark */}
             <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow hover:shadow-lg transition min-h-[150px] cursor-default">
               <h3 className="text-lg font-semibold text-slate-900 mb-2">

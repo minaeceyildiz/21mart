@@ -40,6 +40,22 @@ namespace ApiProject.Data
                 context.Users.AddRange(student, teacher, admin);
                 context.SaveChanges();
             }
+            // Kasiyer hesabı: tek hesap, her zaman var olmalı
+            // Username olarak "kasiyer" yazılacağı için Name alanı da "kasiyer" tutuluyor.
+            // Email login'i desteklemek için de sabit bir email veriyoruz.
+            if (!context.Users.Any(u => u.Name.ToLower().Trim() == "kasiyer"))
+            {
+                var cashier = new User
+                {
+                    Name = "kasiyer",
+                    Email = "kasiyer@baskent.edu.tr",
+                    Role = UserRole.Staff,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword("123456")
+                };
+
+                context.Users.Add(cashier);
+                context.SaveChanges();
+            }
 
             // 2. MENÜYÜ EKLE
             if (!context.MenuItems.Any())
@@ -65,9 +81,12 @@ namespace ApiProject.Data
                 {
                     var order = new Order
                     {
-                        StudentId = ali.Id,
-                        OrderDate = DateTime.Now,
+                        UserId = ali.Id,
+                        UserType = OrderUserType.Student,
+                        CreatedAt = DateTime.UtcNow,
+                        OrderNumber = $"{DateTime.UtcNow:yyyyMMdd}-SEED",
                         Status = OrderStatus.Preparing, // Mutfakta hazırlanıyor görünsün
+                        IsPaid = false,
                         TotalAmount = burger.Price
                     };
                     
