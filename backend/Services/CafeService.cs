@@ -8,8 +8,8 @@ namespace ApiProject.Services;
 public interface ICafeService
 {
     Task<List<MenuItem>> GetMenuItemsAsync();
-    Task<Order> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto);
-    Task<List<Order>> GetStudentOrdersAsync(int studentId);
+    Task<OrderResponseDto> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto);
+    Task<List<OrderResponseDto>> GetStudentOrdersAsync(int studentId);
 }
 
 public class CafeService : ICafeService
@@ -21,6 +21,15 @@ public class CafeService : ICafeService
         _context = context;
     }
 
+    private static readonly Dictionary<OrderStatus, string> StatusToTurkish = new()
+    {
+        { OrderStatus.Pending, "Onaylanması Bekleniyor" },
+        { OrderStatus.Preparing, "Hazırlanıyor" },
+        { OrderStatus.Ready, "Hazırlandı" },
+        { OrderStatus.Delivered, "Teslim Alındı" },
+        { OrderStatus.Cancelled, "İptal Edildi" },
+    };
+
     public async Task<List<MenuItem>> GetMenuItemsAsync()
     {
         return await _context.MenuItems
@@ -29,14 +38,12 @@ public class CafeService : ICafeService
             .ToListAsync();
     }
 
-    public async Task<Order> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto)
+    public async Task<OrderResponseDto> CreateOrderAsync(int studentId, CreateOrderDto createOrderDto)
     {
-        // Öğrencinin var olduğunu kontrol et
         var student = await _context.Users.FindAsync(studentId);
         if (student == null)
-            throw new InvalidOperationException("Öğrenci bulunamadı.");
+            throw new InvalidOperationException("Kullanıcı bulunamadı.");
 
-        // Menü öğelerini kontrol et ve toplam tutarı hesapla
         decimal totalAmount = 0;
         var orderItems = new List<OrderItem>();
 
@@ -53,44 +60,80 @@ public class CafeService : ICafeService
             {
                 MenuItemId = itemDto.MenuItemId,
                 Quantity = itemDto.Quantity,
-                Price = menuItem.Price // O anki fiyatı kaydet
+                Price = menuItem.Price
             };
 
             totalAmount += menuItem.Price * itemDto.Quantity;
             orderItems.Add(orderItem);
         }
 
-        // Siparişi oluştur
         var order = new Order
         {
             StudentId = studentId,
             OrderDate = DateTime.UtcNow,
             Status = OrderStatus.Pending,
             TotalAmount = totalAmount,
+            PickupTime = createOrderDto.PickupTime,
+            Note = createOrderDto.Note,
             OrderItems = orderItems
         };
 
         _context.Orders.Add(order);
         await _context.SaveChangesAsync();
 
-        // İlişkili verileri yükle
         await _context.Entry(order)
             .Collection(o => o.OrderItems)
             .Query()
             .Include(oi => oi.MenuItem)
             .LoadAsync();
 
-        return order;
+        return MapToResponseDto(order);
     }
 
-    public async Task<List<Order>> GetStudentOrdersAsync(int studentId)
+    public async Task<List<OrderResponseDto>> GetStudentOrdersAsync(int studentId)
     {
-        return await _context.Orders
+        var orders = await _context.Orders
             .Where(o => o.StudentId == studentId)
             .Include(o => o.OrderItems)
                 .ThenInclude(oi => oi.MenuItem)
             .OrderByDescending(o => o.OrderDate)
             .ToListAsync();
+
+        return orders.Select(MapToResponseDto).ToList();
+    }
+
+    private OrderResponseDto MapToResponseDto(Order order)
+    {
+        var now = DateTime.UtcNow;
+        var diff = now - order.OrderDate;
+        string createdAt;
+
+        if (diff.TotalMinutes < 1)
+            createdAt = "Az önce";
+        else if (diff.TotalMinutes < 60)
+            createdAt = $"{(int)diff.TotalMinutes} dk önce";
+        else if (diff.TotalHours < 24)
+            createdAt = $"Bugün, {order.OrderDate.ToLocalTime():HH:mm}";
+        else if (diff.TotalHours < 48)
+            createdAt = $"Dün, {order.OrderDate.ToLocalTime():HH:mm}";
+        else
+            createdAt = order.OrderDate.ToLocalTime().ToString("dd.MM.yyyy, HH:mm");
+
+        return new OrderResponseDto
+        {
+            Id = order.Id,
+            Items = order.OrderItems.Select(oi => new OrderItemResponseDto
+            {
+                MenuItemId = oi.MenuItemId,
+                Name = oi.MenuItem?.Name ?? "Bilinmeyen Ürün",
+                Quantity = oi.Quantity,
+                Price = oi.Price
+            }).ToList(),
+            TotalPrice = order.TotalAmount,
+            PickupTime = order.PickupTime ?? "",
+            Note = order.Note,
+            Status = StatusToTurkish.GetValueOrDefault(order.Status, "Bilinmeyen"),
+            CreatedAt = createdAt
+        };
     }
 }
-

@@ -55,12 +55,15 @@ const InstructorDashboard: React.FC = () => {
           </button>
 
           {/* Diğerleri (aynı) */}
-          <div className="bg-white rounded-2xl border p-6 shadow">
+          <button
+            onClick={() => navigate("/kutuphane")}
+            className="text-left bg-white rounded-2xl border p-6 shadow hover:shadow-lg transition"
+          >
             <h3 className="text-lg font-semibold mb-2">Kütüphane Doluluk</h3>
             <p className="text-slate-600">
               Kütüphanenin doluluk oranını görüntüleyin.
             </p>
-          </div>
+          </button>
 
           <button
             onClick={() => navigate("/kafeterya")}

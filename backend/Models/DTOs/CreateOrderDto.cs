@@ -17,5 +17,11 @@ public class CreateOrderDto
     [Required(ErrorMessage = "Sipariş öğeleri gereklidir")]
     [MinLength(1, ErrorMessage = "En az bir ürün seçmelisiniz")]
     public List<CreateOrderItemDto> OrderItems { get; set; } = new();
+
+    [Required(ErrorMessage = "Teslim saati gereklidir")]
+    public string PickupTime { get; set; } = string.Empty;
+
+    [MaxLength(500)]
+    public string? Note { get; set; }
 }
 

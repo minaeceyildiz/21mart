@@ -7,6 +7,7 @@ import InstructorDashboard from "./pages/InstructorDashboard";
 import TeacherAppointmentPage from "./pages/TeacherAppointmentPage";
 import InstructorAppointmentManagementPage from "./pages/InstructorAppointmentManagementPage";
 import CafeteriaOrderPage from "./pages/CafeteriaOrderPage";
+import LibraryOccupancyPage from "./pages/LibraryOccupancyPage";
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           element={<InstructorAppointmentManagementPage />}
         />
         <Route path="/kafeterya" element={<CafeteriaOrderPage />} />
+        <Route path="/kutuphane" element={<LibraryOccupancyPage />} />
       </Routes>
     </Router>
   );
