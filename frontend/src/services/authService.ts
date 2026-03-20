@@ -219,3 +219,34 @@ export const isAuthenticated = (): boolean => {
   return !!localStorage.getItem('token');
 };
 
+/** Şifre sıfırlama talebi (e-posta enumeration azaltılmış genel mesaj döner). */
+export const requestForgotPassword = async (email: string): Promise<string> => {
+  try {
+    const res = await apiClient.post<{ message: string }>('/Auth/forgot-password', { email });
+    return res.data.message;
+  } catch (error: any) {
+    const msg =
+      error.response?.data?.message ||
+      error.response?.data?.title ||
+      error.message;
+    throw { message: msg || 'İstek gönderilemedi.', status: error.response?.status } as ApiError;
+  }
+};
+
+/** E-postadaki token ile yeni şifre. */
+export const resetPasswordWithToken = async (token: string, newPassword: string): Promise<string> => {
+  try {
+    const res = await apiClient.post<{ message: string }>('/Auth/reset-password', {
+      token,
+      newPassword,
+    });
+    return res.data.message;
+  } catch (error: any) {
+    const msg =
+      error.response?.data?.message ||
+      error.response?.data?.title ||
+      error.message;
+    throw { message: msg || 'Şifre güncellenemedi.', status: error.response?.status } as ApiError;
+  }
+};
+

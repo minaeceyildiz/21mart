@@ -8,6 +8,7 @@ namespace ApiProject.Services;
 public interface IEmailService
 {
     Task SendVerificationEmailAsync(string email, string name, string token, int userId);
+    Task SendPasswordResetEmailAsync(string email, string name, string resetLink, int validMinutes);
 }
 
 public class EmailService : IEmailService
@@ -168,6 +169,93 @@ public class EmailService : IEmailService
         {
             _logger.LogError(ex, $"Email gönderilirken hata oluştu: {email}");
             throw new InvalidOperationException("Email gönderilirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.", ex);
+        }
+    }
+
+    public async Task SendPasswordResetEmailAsync(string email, string name, string resetLink, int validMinutes)
+    {
+        try
+        {
+            var smtpSettings = _configuration.GetSection("Smtp");
+            var smtpHost = smtpSettings["Host"] ?? "smtp.gmail.com";
+            var smtpPort = int.Parse(smtpSettings["Port"] ?? "587");
+            var smtpUsername = smtpSettings["Username"] ?? "";
+            var smtpPassword = smtpSettings["Password"] ?? "";
+            var smtpFromEmail = smtpSettings["FromEmail"] ?? smtpUsername;
+            var smtpFromName = smtpSettings["FromName"] ?? "Başkent Üniversitesi";
+
+            var subject = "Şifre Sıfırlama - Başkent Yaşam";
+            var body = $@"
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'></head>
+                <body style='margin:0;padding:0;font-family:Arial,sans-serif;background-color:#f4f4f4;'>
+                    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f4f4f4;padding:20px;'>
+                        <tr><td align='center'>
+                            <table width='600' cellpadding='0' cellspacing='0' style='background-color:white;border-radius:10px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1);'>
+                                <tr>
+                                    <td style='background:linear-gradient(135deg,#d71920 0%,#a01417 100%);padding:32px;text-align:center;'>
+                                        <h1 style='color:white;margin:0;font-size:24px;'>Başkent Yaşam</h1>
+                                        <p style='color:#ffd;margin:8px 0 0;font-size:13px;'>Şifre sıfırlama talebi</p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style='padding:32px 28px;'>
+                                        <p style='color:#333;margin:0 0 16px;font-size:16px;'>Merhaba <strong>{WebUtility.HtmlEncode(name)}</strong>,</p>
+                                        <p style='color:#666;line-height:1.6;margin:0 0 20px;font-size:15px;'>
+                                            Hesabınız için şifre sıfırlama isteği alındı. Yeni şifre belirlemek için aşağıdaki butona tıklayın.
+                                        </p>
+                                        <table width='100%' cellpadding='0' cellspacing='0'><tr><td align='center' style='padding:16px 0;'>
+                                            <a href='{WebUtility.HtmlEncode(resetLink)}' style='background:#d71920;color:white;padding:14px 36px;text-decoration:none;border-radius:6px;font-weight:bold;font-size:15px;display:inline-block;'>
+                                                Şifremi sıfırla
+                                            </a>
+                                        </td></tr></table>
+                                        <div style='background:#f9f9f9;padding:16px;border-radius:6px;margin:20px 0;'>
+                                            <p style='color:#666;margin:0 0 8px;font-size:13px;'><strong>Link çalışmıyorsa</strong> adresi kopyalayın:</p>
+                                            <p style='color:#d71920;word-break:break-all;margin:0;font-size:12px;'>{WebUtility.HtmlEncode(resetLink)}</p>
+                                        </div>
+                                        <div style='border-left:4px solid #ff9800;padding:12px 14px;background:#fff8e1;margin-top:16px;'>
+                                            <p style='color:#e65100;margin:0;font-size:13px;'>
+                                                <strong>Önemli:</strong> Bu bağlantı yaklaşık <strong>{validMinutes} dakika</strong> geçerlidir. Süre dolunca yeni talep oluşturmanız gerekir.
+                                            </p>
+                                        </div>
+                                        <p style='color:#999;font-size:13px;margin-top:20px;'>
+                                            Bu isteği siz yapmadıysanız bu e-postayı yok sayın; şifreniz değişmez.
+                                        </p>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style='background:#f9f9f9;padding:16px 28px;text-align:center;border-top:1px solid #eee;'>
+                                        <p style='color:#999;font-size:11px;margin:0;'>Bu otomatik bir e-postadır, lütfen yanıtlamayın.</p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td></tr>
+                    </table>
+                </body>
+                </html>";
+
+            using var client = new SmtpClient(smtpHost, smtpPort);
+            client.EnableSsl = true;
+            client.Credentials = new NetworkCredential(smtpUsername, smtpPassword);
+
+            using var message = new MailMessage();
+            message.From = new MailAddress(smtpFromEmail, smtpFromName);
+            message.To.Add(new MailAddress(email, name));
+            message.Subject = subject;
+            message.Body = body;
+            message.IsBodyHtml = true;
+            message.BodyEncoding = System.Text.Encoding.UTF8;
+            message.SubjectEncoding = System.Text.Encoding.UTF8;
+
+            _logger.LogInformation("Şifre sıfırlama e-postası gönderiliyor: {Email}", email);
+            await client.SendMailAsync(message);
+            _logger.LogInformation("Şifre sıfırlama e-postası gönderildi: {Email}", email);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Şifre sıfırlama e-postası gönderilemedi: {Email}", email);
+            throw new InvalidOperationException("E-posta gönderilirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.", ex);
         }
     }
 }

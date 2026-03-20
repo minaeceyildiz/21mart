@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { login, register, ApiError } from "../services/authService";
 
 const LoginPage: React.FC = () => {
@@ -266,11 +266,16 @@ const LoginPage: React.FC = () => {
           <option value="instructor">Akademik Personel</option>
           {!isSignup && <option value="cashier">Kasiyer</option>}
         </select>
-         <div className="text-right mt-2">
-          <span className="text-sm text-blue-600 cursor-pointer hover:underline">
-           Şifremi Unuttum
-          </span>
-         </div>
+        {!isSignup && (
+          <div className="text-right mt-2">
+            <Link
+              to="/sifremi-unuttum"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              Şifremi Unuttum
+            </Link>
+          </div>
+        )}
         <button
           type="submit"
           disabled={loading}

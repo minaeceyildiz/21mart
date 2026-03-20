@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Data.Common;
 using BCrypt.Net;
@@ -19,6 +20,10 @@ public interface IAuthService
     Task<AuthResponseDto> RegisterAsync(RegisterDto registerDto);
     Task<bool> VerifyEmailAsync(string token, int userId);
     string GenerateJwtToken(User user);
+    /// <summary>E-posta kayıtlı değilse sessizce çıkar; enumeration riskini azaltmak için.</summary>
+    Task RequestPasswordResetAsync(string email);
+    /// <summary>Geçerli token ile şifreyi günceller; token tek kullanımlıktır.</summary>
+    Task<bool> ResetPasswordWithTokenAsync(string plainToken, string newPassword);
 }
 
 public class AuthService : IAuthService
@@ -346,5 +351,102 @@ public class AuthService : IAuthService
         }
 
         return true;
+    }
+
+    public async Task RequestPasswordResetAsync(string email)
+    {
+        var normalized = email?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == normalized);
+
+        if (user == null)
+        {
+            _logger.LogInformation("Şifre sıfırlama: e-posta sistemde yok (genel yanıt verilecek): {Email}", normalized);
+            return;
+        }
+
+        var expiryMinutes = _configuration.GetValue("PasswordReset:ExpiryMinutes", 20);
+        if (expiryMinutes < 15) expiryMinutes = 15;
+        if (expiryMinutes > 30) expiryMinutes = 30;
+
+        var pending = await _context.PasswordResetTokens
+            .Where(t => t.UserId == user.Id && t.UsedAt == null)
+            .ToListAsync();
+        _context.PasswordResetTokens.RemoveRange(pending);
+
+        var plainToken = GenerateSecureUrlToken();
+        var tokenHash = HashPasswordResetToken(plainToken);
+
+        var entity = new PasswordResetToken
+        {
+            UserId = user.Id,
+            TokenHash = tokenHash,
+            ExpiresAt = DateTime.UtcNow.AddMinutes(expiryMinutes),
+            CreatedAt = DateTime.UtcNow
+        };
+        _context.PasswordResetTokens.Add(entity);
+        await _context.SaveChangesAsync();
+
+        var frontendUrl = Environment.GetEnvironmentVariable("FRONTEND_URL")
+                           ?? _configuration["PasswordReset:FrontendUrl"]
+                           ?? "http://localhost:3000";
+        var resetLink =
+            $"{frontendUrl.TrimEnd('/')}/reset-password?token={Uri.EscapeDataString(plainToken)}";
+
+        try
+        {
+            await _emailService.SendPasswordResetEmailAsync(user.Email, user.Name, resetLink, expiryMinutes);
+        }
+        catch (Exception ex)
+        {
+            _context.PasswordResetTokens.Remove(entity);
+            await _context.SaveChangesAsync();
+            _logger.LogError(ex, "Şifre sıfırlama e-postası gönderilemedi, token iptal: UserId={UserId}", user.Id);
+            throw;
+        }
+    }
+
+    public async Task<bool> ResetPasswordWithTokenAsync(string plainToken, string newPassword)
+    {
+        if (string.IsNullOrWhiteSpace(plainToken) || string.IsNullOrWhiteSpace(newPassword))
+            return false;
+
+        var tokenHash = HashPasswordResetToken(plainToken.Trim());
+        var row = await _context.PasswordResetTokens
+            .Include(t => t.User)
+            .FirstOrDefaultAsync(t =>
+                t.TokenHash == tokenHash &&
+                t.UsedAt == null &&
+                t.ExpiresAt > DateTime.UtcNow);
+
+        if (row == null)
+        {
+            _logger.LogWarning("Şifre sıfırlama: geçersiz veya süresi dolmuş token");
+            return false;
+        }
+
+        row.User.PasswordHash = BCrypt.Net.BCrypt.HashPassword(newPassword);
+        row.UsedAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+        _logger.LogInformation("Şifre sıfırlama başarılı: UserId={UserId}", row.UserId);
+        return true;
+    }
+
+    private static string HashPasswordResetToken(string plain)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(plain));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    private static string GenerateSecureUrlToken()
+    {
+        var bytes = RandomNumberGenerator.GetBytes(32);
+        return Convert.ToBase64String(bytes)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
     }
 }

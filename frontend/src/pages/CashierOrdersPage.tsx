@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   cashierApprove,
@@ -23,31 +23,46 @@ const CashierOrdersPage: React.FC = () => {
 
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "ALL">("ALL");
   const [paidFilter, setPaidFilter] = useState<"ALL" | "PAID" | "UNPAID">("UNPAID");
+  const [searchDraft, setSearchDraft] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  const isHistoryMode = debouncedSearch.trim().length >= 2;
 
   const queryParams = useMemo(() => {
-    const params: any = {};
+    const params: Record<string, unknown> = {};
     if (statusFilter !== "ALL") params.status = statusFilter;
     if (paidFilter === "PAID") params.isPaid = true;
     if (paidFilter === "UNPAID") params.isPaid = false;
     return params;
   }, [paidFilter, statusFilter]);
 
-  const refresh = async () => {
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(searchDraft.trim()), 400);
+    return () => window.clearTimeout(t);
+  }, [searchDraft]);
+
+  const refresh = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getCashierOrders(queryParams);
+      const term = debouncedSearch.trim();
+      const params: { status?: OrderStatus; isPaid?: boolean; userSearch?: string } = {};
+      if (term.length >= 2) {
+        params.userSearch = term;
+      } else {
+        Object.assign(params, queryParams);
+      }
+      const data = await getCashierOrders(params);
       setOrders(data);
     } catch (e: any) {
       setError(e?.message || "Siparişler getirilirken hata oluştu.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [debouncedSearch, queryParams]);
 
   useEffect(() => {
-    refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, paidFilter]);
+    void refresh();
+  }, [refresh]);
 
   const act = async (fn: (id: number) => Promise<any>, id: number) => {
     try {
@@ -82,13 +97,64 @@ const CashierOrdersPage: React.FC = () => {
 
       <main className="flex-1 px-4 py-8">
         <div className="max-w-6xl mx-auto">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-4 space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Kullanıcı ara (ad, e-posta veya öğrenci no)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="search"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-[#d71920]/30 focus:border-[#d71920] outline-none"
+                  placeholder="Örn: ahmet veya @edu.tr veya öğrenci numarası…"
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  autoComplete="off"
+                />
+                {searchDraft.length > 0 && (
+                  <button
+                    type="button"
+                    className="px-3 py-2 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+                    onClick={() => {
+                      setSearchDraft("");
+                      setDebouncedSearch("");
+                    }}
+                  >
+                    Temizle
+                  </button>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                {searchDraft.trim().length > 0 && searchDraft.trim().length < 2
+                  ? "Geçmiş siparişler için en az 2 karakter yazın."
+                  : isHistoryMode
+                    ? "Geçmiş modu: aşağıda eşleşen kullanıcı(lar)a ait tüm siparişler (iptal ve ödendi dahil) listelenir. Filtreler bu modda devre dışı."
+                    : "Arama boşken: bekleyen kasiyer kuyruğu ve seçili durum/ödeme filtreleri uygulanır."}
+              </p>
+            </div>
+
+            {isHistoryMode && (
+              <div className="rounded-xl bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-900">
+                <span className="font-semibold">Kullanıcı geçmişi:</span> “{debouncedSearch.trim()}” —{" "}
+                {loading ? (
+                  <span className="text-blue-700">aranıyor…</span>
+                ) : (
+                  <>
+                    <span className="font-mono">{orders.length}</span> sipariş listeleniyor (iptal / ödendi / ödenmedi
+                    dahil).
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
             <div className="flex gap-3 flex-col sm:flex-row">
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select
-                  className="border rounded-lg px-3 py-2 text-sm"
+                  className="border rounded-lg px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   value={statusFilter}
+                  disabled={isHistoryMode}
                   onChange={(e) => setStatusFilter(e.target.value as any)}
                 >
                   <option value="ALL">Hepsi</option>
@@ -104,8 +170,9 @@ const CashierOrdersPage: React.FC = () => {
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Ödeme</label>
                 <select
-                  className="border rounded-lg px-3 py-2 text-sm"
+                  className="border rounded-lg px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
                   value={paidFilter}
+                  disabled={isHistoryMode}
                   onChange={(e) => setPaidFilter(e.target.value as any)}
                 >
                   <option value="ALL">Hepsi</option>
@@ -116,12 +183,13 @@ const CashierOrdersPage: React.FC = () => {
             </div>
 
             <button
-              onClick={refresh}
+              onClick={() => void refresh()}
               className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm hover:opacity-90"
               disabled={loading}
             >
               Yenile
             </button>
+            </div>
           </div>
 
           {error && (
@@ -134,7 +202,11 @@ const CashierOrdersPage: React.FC = () => {
 
           {!loading && orders.length === 0 && (
             <div className="bg-white rounded-xl border p-6">
-              <p className="text-slate-600">Filtreye uygun sipariş yok.</p>
+              <p className="text-slate-600">
+                {isHistoryMode
+                  ? "Bu aramayla eşleşen kullanıcı bulunamadı veya bu kullanıcıya ait sipariş yok."
+                  : "Filtreye uygun sipariş yok."}
+              </p>
             </div>
           )}
 
@@ -143,6 +215,26 @@ const CashierOrdersPage: React.FC = () => {
               <div key={o.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
                   <div className="flex-1">
+                    {(o.customerName || o.customerEmail || o.studentNo) && (
+                      <div
+                        className={
+                          "mb-3 rounded-lg border px-3 py-2 text-sm " +
+                          (isHistoryMode
+                            ? "bg-slate-100 border-slate-300"
+                            : "bg-slate-50 border-slate-200")
+                        }
+                      >
+                        <p className="text-xs font-medium text-slate-500 mb-1">Müşteri</p>
+                        <p className="font-semibold text-slate-900">{o.customerName || "—"}</p>
+                        {o.customerEmail && (
+                          <p className="text-slate-600 text-xs mt-0.5">{o.customerEmail}</p>
+                        )}
+                        {o.studentNo && (
+                          <p className="text-slate-600 text-xs">Öğrenci no: {o.studentNo}</p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm text-slate-500">Sipariş No</p>

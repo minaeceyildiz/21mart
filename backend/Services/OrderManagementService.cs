@@ -8,7 +8,8 @@ namespace ApiProject.Services;
 public interface IOrderManagementService
 {
     Task<List<OrderResponseDto>> GetMyOrdersAsync(int userId);
-    Task<List<OrderResponseDto>> GetCashierOrdersAsync(OrderStatus? status, bool? isPaid);
+    /// <param name="userSearch">Dolu ve 2+ karakter ise: eşleşen kullanıcı(lar)ın tüm sipariş geçmişi (iptal/ödendi dahil). Boşsa: kasiyer kuyruğu.</param>
+    Task<List<OrderResponseDto>> GetCashierOrdersAsync(OrderStatus? status, bool? isPaid, string? userSearch);
     Task<OrderResponseDto?> ApproveAsync(int orderId);
     Task<OrderResponseDto?> PreparingAsync(int orderId);
     Task<OrderResponseDto?> ReadyAsync(int orderId);
@@ -32,6 +33,7 @@ public class OrderManagementService : IOrderManagementService
     {
         var orders = await _context.Orders
             .Where(o => o.UserId == userId)
+            .Include(o => o.User)
             .Include(o => o.OrderItems)
             .ThenInclude(oi => oi.MenuItem)
             .OrderByDescending(o => o.CreatedAt)
@@ -40,24 +42,59 @@ public class OrderManagementService : IOrderManagementService
         return orders.Select(MapOrder).ToList();
     }
 
-    public async Task<List<OrderResponseDto>> GetCashierOrdersAsync(OrderStatus? status, bool? isPaid)
+    public async Task<List<OrderResponseDto>> GetCashierOrdersAsync(OrderStatus? status, bool? isPaid, string? userSearch)
     {
+        var term = userSearch?.Trim();
+        if (!string.IsNullOrEmpty(term) && term.Length >= 2)
+            return await GetCashierOrdersByUserSearchAsync(term);
+
         var query = _context.Orders
+            .Include(o => o.User)
             .Include(o => o.OrderItems)
             .ThenInclude(oi => oi.MenuItem)
             .AsQueryable();
 
         if (status.HasValue)
             query = query.Where(o => o.Status == status.Value);
+        else
+            // Genel kuyruk: "Hepsi" durumunda iptalleri gösterme (aktif iş listesi)
+            query = query.Where(o => o.Status != OrderStatus.Cancelled);
 
         if (isPaid.HasValue)
             query = query.Where(o => o.IsPaid == isPaid.Value);
 
-        // Aktif sipariş mantığı: iptal dışındakiler
-        query = query.Where(o => o.Status != OrderStatus.Cancelled);
-
         var orders = await query
             .OrderBy(o => o.CreatedAt)
+            .ToListAsync();
+
+        return orders.Select(MapOrder).ToList();
+    }
+
+    /// <summary>
+    /// Ad, e-posta veya öğrenci numarası ile eşleşen kullanıcıların tüm siparişleri (tamamlanmış, iptal, ödenmedi vb.).
+    /// </summary>
+    private async Task<List<OrderResponseDto>> GetCashierOrdersByUserSearchAsync(string term)
+    {
+        var t = term.ToLowerInvariant();
+        var userIds = await _context.Users
+            .AsNoTracking()
+            .Where(u =>
+                u.Name.ToLower().Contains(t) ||
+                u.Email.ToLower().Contains(t) ||
+                (u.StudentNo != null && u.StudentNo.ToLower().Contains(t)))
+            .Select(u => u.Id)
+            .Distinct()
+            .ToListAsync();
+
+        if (userIds.Count == 0)
+            return new List<OrderResponseDto>();
+
+        var orders = await _context.Orders
+            .Where(o => userIds.Contains(o.UserId))
+            .Include(o => o.User)
+            .Include(o => o.OrderItems)
+            .ThenInclude(oi => oi.MenuItem)
+            .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
 
         return orders.Select(MapOrder).ToList();
@@ -222,6 +259,9 @@ public class OrderManagementService : IOrderManagementService
             Id = order.Id,
             OrderNumber = order.OrderNumber,
             UserId = order.UserId,
+            CustomerName = order.User?.Name,
+            CustomerEmail = order.User?.Email,
+            StudentNo = order.User?.StudentNo,
             UserType = order.UserType,
             TotalAmount = order.TotalAmount,
             Status = order.Status,

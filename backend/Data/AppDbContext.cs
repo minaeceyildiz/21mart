@@ -16,6 +16,7 @@ namespace ApiProject.Data
         public DbSet<OrderItem> OrderItems { get; set; }
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<InstructorSchedule> InstructorSchedules { get; set; }
+        public DbSet<PasswordResetToken> PasswordResetTokens { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -29,6 +30,22 @@ namespace ApiProject.Data
             modelBuilder.Entity<OrderItem>().ToTable("OrderItems");
             modelBuilder.Entity<Notification>().ToTable("Notifications");
             modelBuilder.Entity<InstructorSchedule>().ToTable("instructor_schedule");
+            modelBuilder.Entity<PasswordResetToken>().ToTable("password_reset_tokens");
+
+            modelBuilder.Entity<PasswordResetToken>(entity =>
+            {
+                entity.Property(e => e.Id).HasColumnName("id");
+                entity.Property(e => e.UserId).HasColumnName("user_id");
+                entity.Property(e => e.TokenHash).HasColumnName("token_hash").HasMaxLength(64);
+                entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+                entity.Property(e => e.UsedAt).HasColumnName("used_at");
+                entity.Property(e => e.CreatedAt).HasColumnName("created_at");
+                entity.HasIndex(e => e.TokenHash).IsUnique();
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
 
             // User entity column mappings - Veritabanındaki gerçek kolon adlarına göre
             modelBuilder.Entity<User>(entity =>

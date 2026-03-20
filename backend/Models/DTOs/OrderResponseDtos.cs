@@ -16,6 +16,12 @@ public class OrderResponseDto
     public int Id { get; set; }
     public string OrderNumber { get; set; } = string.Empty;
     public int UserId { get; set; }
+    /// <summary>Kasiyer denetimi: sipariş sahibinin görünen adı (User.Name).</summary>
+    public string? CustomerName { get; set; }
+    /// <summary>Kasiyer denetimi: e-posta.</summary>
+    public string? CustomerEmail { get; set; }
+    /// <summary>Varsa öğrenci numarası.</summary>
+    public string? StudentNo { get; set; }
     public OrderUserType UserType { get; set; }
     public decimal TotalAmount { get; set; }
     public OrderStatus Status { get; set; }

@@ -18,9 +18,12 @@ public class CashierOrdersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult> GetOrders([FromQuery] OrderStatus? status, [FromQuery] bool? isPaid)
+    public async Task<ActionResult> GetOrders(
+        [FromQuery] OrderStatus? status,
+        [FromQuery] bool? isPaid,
+        [FromQuery] string? userSearch)
     {
-        var orders = await _orderManagementService.GetCashierOrdersAsync(status, isPaid);
+        var orders = await _orderManagementService.GetCashierOrdersAsync(status, isPaid, userSearch);
         return Ok(orders);
     }
 

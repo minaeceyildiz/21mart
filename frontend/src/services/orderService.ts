@@ -21,6 +21,10 @@ export interface OrderResponseDto {
   id: number;
   orderNumber: string;
   userId: number;
+  /** Kasiyer denetimi: sipariş sahibi */
+  customerName?: string | null;
+  customerEmail?: string | null;
+  studentNo?: string | null;
   userType: "Student" | "Staff";
   totalAmount: number;
   status: OrderStatus;
@@ -56,6 +60,8 @@ export const getMyOrders = async (): Promise<OrderResponseDto[]> => {
 export const getCashierOrders = async (params?: {
   status?: OrderStatus;
   isPaid?: boolean;
+  /** 2+ karakter: ad, e-posta veya öğrenci no ile eşleşen kullanıcıların tüm sipariş geçmişi */
+  userSearch?: string;
 }): Promise<OrderResponseDto[]> => {
   const res = await apiClient.get<OrderResponseDto[]>("/cashier/orders", {
     params,

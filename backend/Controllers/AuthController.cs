@@ -130,6 +130,67 @@ public class AuthController : ControllerBase
     }
 
     /// <summary>
+    /// Şifre sıfırlama talebi. E-posta yoksa bile aynı genel mesaj (enumeration azaltma).
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordRequestDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { message = "İstek gövdesi boş olamaz." });
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            await _authService.RequestPasswordResetAsync(dto.Email);
+            return Ok(new
+            {
+                message =
+                    "Bu e-posta adresi sistemde kayıtlıysa, şifre sıfırlama bağlantısı gönderilmiştir. Gelen kutunuzu ve spam klasörünü kontrol edin."
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(500, new { message = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "İşlem sırasında bir hata oluştu.", error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// E-postadaki token ile yeni şifre belirleme.
+    /// </summary>
+    [HttpPost("reset-password")]
+    public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordRequestDto dto)
+    {
+        if (dto == null)
+            return BadRequest(new { message = "İstek gövdesi boş olamaz." });
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        try
+        {
+            var ok = await _authService.ResetPasswordWithTokenAsync(dto.Token, dto.NewPassword);
+            if (!ok)
+            {
+                return BadRequest(new
+                {
+                    message =
+                        "Bağlantı geçersiz veya süresi dolmuş. Lütfen giriş sayfasından yeni bir şifre sıfırlama talebi oluşturun."
+                });
+            }
+
+            return Ok(new { message = "Şifreniz başarıyla güncellendi." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Şifre güncellenirken bir hata oluştu.", error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Tüm kullanıcıları listeler (Email ve şifre gösterilmez)
     /// </summary>
     [HttpGet("users")]
