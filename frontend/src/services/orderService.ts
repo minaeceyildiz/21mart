@@ -36,6 +36,15 @@ export interface OrderResponseDto {
   pickupTime?: string | null;
   note?: string | null;
   orderItems: OrderItemResponseDto[];
+  /** Müşterinin tüm NotPaid adedi (Ready dahil değil) */
+  customerNotPaidCount: number;
+  customerNotPaidTotal: number;
+}
+
+export interface CashierUnpaidRiskOverview {
+  usersAtOrOverLimit: number;
+  totalOpenNotPaidOrders: number;
+  unpaidLimit: number;
 }
 
 export interface CreateOrderItemDto {
@@ -66,6 +75,40 @@ export const getCashierOrders = async (params?: {
   const res = await apiClient.get<OrderResponseDto[]>("/cashier/orders", {
     params,
   });
+  return res.data;
+};
+
+export const getCashierUnpaidRiskOverview =
+  async (): Promise<CashierUnpaidRiskOverview> => {
+    const res = await apiClient.get<CashierUnpaidRiskOverview>(
+      "/cashier/orders/unpaid-risk-overview"
+    );
+    return res.data;
+  };
+
+export const getCashierUnpaidByUser = async (
+  userId: number
+): Promise<OrderResponseDto[]> => {
+  const res = await apiClient.get<OrderResponseDto[]>(
+    "/cashier/orders/unpaid-by-user",
+    { params: { userId } }
+  );
+  return res.data;
+};
+
+export const cashierSettleDebt = async (id: number) => {
+  const res = await apiClient.put<OrderResponseDto>(
+    `/cashier/orders/${id}/settle-debt`
+  );
+  return res.data;
+};
+
+export const cashierSettleAllUnpaid = async (userId: number) => {
+  const res = await apiClient.post<{ settledCount: number; message: string }>(
+    "/cashier/orders/settle-all-unpaid",
+    null,
+    { params: { userId } }
+  );
   return res.data;
 };
 

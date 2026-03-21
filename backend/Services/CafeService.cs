@@ -10,10 +10,15 @@ public interface ICafeService
     Task<List<MenuItem>> GetMenuItemsAsync();
     Task<CafeteriaOrderResponseDto> CreateOrderAsync(int userId, CreateOrderDto createOrderDto);
     Task<List<CafeteriaOrderResponseDto>> GetUserOrdersAsync(int userId);
+    /// <summary>Durumu NotPaid (Ödenmedi) olan siparişlerin sayısı ve listesi.</summary>
+    Task<MyUnpaidOrdersSummaryDto> GetMyNotPaidOrdersAsync(int userId);
 }
 
 public class CafeService : ICafeService
 {
+    /// <summary>Aynı anda en fazla bu kadar "Ödenmedi" siparişe izin verilir; üstünde yeni sipariş engellenir.</summary>
+    public const int MaxNotPaidOrdersPerUser = 3;
+
     private readonly AppDbContext _context;
     private readonly INotificationService _notificationService;
 
@@ -47,6 +52,15 @@ public class CafeService : ICafeService
         var user = await _context.Users.FindAsync(userId);
         if (user == null)
             throw new InvalidOperationException("Kullanıcı bulunamadı.");
+
+        var notPaidCount = await _context.Orders
+            .CountAsync(o => o.UserId == userId && o.Status == OrderStatus.NotPaid);
+
+        if (notPaidCount >= MaxNotPaidOrdersPerUser)
+        {
+            throw new InvalidOperationException(
+                "Ödenmemiş sipariş limitine ulaştınız. Yeni sipariş vermeden önce lütfen eski siparişlerinizin ödemesini tamamlayın.");
+        }
 
         decimal totalAmount = 0;
         var orderItems = new List<OrderItem>();
@@ -120,6 +134,26 @@ public class CafeService : ICafeService
         return orders.Select(MapToResponseDto).ToList();
     }
 
+    public async Task<MyUnpaidOrdersSummaryDto> GetMyNotPaidOrdersAsync(int userId)
+    {
+        var orders = await _context.Orders
+            .Where(o => o.UserId == userId && o.Status == OrderStatus.NotPaid)
+            .Include(o => o.OrderItems)
+            .ThenInclude(oi => oi.MenuItem)
+            .OrderByDescending(o => o.CreatedAt)
+            .ToListAsync();
+
+        var totalDebt = orders.Sum(o => o.TotalAmount);
+
+        return new MyUnpaidOrdersSummaryDto
+        {
+            Count = orders.Count,
+            TotalDebt = totalDebt,
+            UnpaidLimit = MaxNotPaidOrdersPerUser,
+            Orders = orders.Select(MapToResponseDto).ToList()
+        };
+    }
+
     private CafeteriaOrderResponseDto MapToResponseDto(Order order)
     {
         var now = DateTime.UtcNow;
@@ -140,6 +174,8 @@ public class CafeService : ICafeService
         return new CafeteriaOrderResponseDto
         {
             Id = order.Id,
+            OrderNumber = order.OrderNumber,
+            CreatedAtUtc = order.CreatedAt,
             Items = order.OrderItems.Select(oi => new CafeteriaOrderItemResponseDto
             {
                 MenuItemId = oi.MenuItemId,

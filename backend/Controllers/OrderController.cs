@@ -60,6 +60,20 @@ public class OrderController : ControllerBase
         return await GetMyOrders();
     }
 
+    /// <summary>
+    /// Ödenmedi (NotPaid) durumundaki siparişlerin sayısı ve listesi — ödeme takibi / limit için.
+    /// </summary>
+    [HttpGet("my/unpaid")]
+    public async Task<ActionResult<MyUnpaidOrdersSummaryDto>> GetMyUnpaidOrders()
+    {
+        var userId = GetCurrentUserId();
+        if (userId == null)
+            return Unauthorized();
+
+        var summary = await _cafeService.GetMyNotPaidOrdersAsync(userId.Value);
+        return Ok(summary);
+    }
+
     private int? GetCurrentUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

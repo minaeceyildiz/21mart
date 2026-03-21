@@ -32,6 +32,26 @@ export interface OrderResponse {
   createdAt: string;
 }
 
+/** Kasiyerde "Ödenmedi" (NotPaid) — limit yalnızca bunları sayar */
+export interface UnpaidOrderLine {
+  id: number;
+  orderNumber: string;
+  createdAtUtc: string;
+  items: OrderItemResponse[];
+  totalPrice: number;
+  pickupTime: string;
+  note: string | null;
+  status: string;
+  createdAt: string;
+}
+
+export interface MyUnpaidOrdersSummary {
+  count: number;
+  totalDebt: number;
+  unpaidLimit: number;
+  orders: UnpaidOrderLine[];
+}
+
 export const getMenuItems = async (): Promise<MenuItemFromApi[]> => {
   const response = await apiClient.get<MenuItemFromApi[]>('/Menu');
   return response.data;
@@ -44,5 +64,10 @@ export const createOrder = async (order: CreateOrderRequest): Promise<OrderRespo
 
 export const getMyOrders = async (): Promise<OrderResponse[]> => {
   const response = await apiClient.get<OrderResponse[]>('/Order/my-orders');
+  return response.data;
+};
+
+export const getMyUnpaidOrders = async (): Promise<MyUnpaidOrdersSummary> => {
+  const response = await apiClient.get<MyUnpaidOrdersSummary>('/Order/my/unpaid');
   return response.data;
 };

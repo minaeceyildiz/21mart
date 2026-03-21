@@ -33,5 +33,10 @@ public class OrderResponseDto
     public string? PickupTime { get; set; }
     public string? Note { get; set; }
     public List<OrderItemResponseDto> OrderItems { get; set; } = new();
+
+    /// <summary>Kasiyer listesi: müşterinin tüm NotPaid sipariş adedi (Ready dahil değil).</summary>
+    public int CustomerNotPaidCount { get; set; }
+    /// <summary>Kasiyer listesi: müşterinin NotPaid siparişlerinin toplam tutarı.</summary>
+    public decimal CustomerNotPaidTotal { get; set; }
 }
 

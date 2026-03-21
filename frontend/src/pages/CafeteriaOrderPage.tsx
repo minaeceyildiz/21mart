@@ -5,7 +5,9 @@ import {
   getMenuItems,
   createOrder,
   getMyOrders,
+  getMyUnpaidOrders,
   MenuItemFromApi,
+  MyUnpaidOrdersSummary,
   OrderResponse,
 } from "../services/cafeteriaService";
 
@@ -171,8 +173,18 @@ const CafeteriaOrderPage: React.FC = () => {
   const [note, setNote] = useState("");
   const [orders, setOrders] = useState<PastOrder[]>([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
+  const [unpaidSummary, setUnpaidSummary] = useState<MyUnpaidOrdersSummary | null>(
+    null,
+  );
+  const [unpaidLoading, setUnpaidLoading] = useState(true);
+  const [showUnpaidDetails, setShowUnpaidDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cartLoaded, setCartLoaded] = useState(false);
+
+  const unpaidCount = unpaidSummary?.count ?? 0;
+  const unpaidLimit = unpaidSummary?.unpaidLimit ?? 3;
+  const totalDebt = unpaidSummary?.totalDebt ?? 0;
+  const isUnpaidLimitReached = unpaidCount >= unpaidLimit;
 
   useEffect(() => {
     const fetchMenu = async () => {
@@ -203,22 +215,27 @@ const CafeteriaOrderPage: React.FC = () => {
     setCartLoaded(true);
   }, [menuItems]);
 
-  const fetchOrders = useCallback(async () => {
+  const refreshOrdersAndUnpaid = useCallback(async () => {
     try {
-      const data = await getMyOrders();
-      setOrders(data.map(mapOrderResponse));
+      const [ordersData, unpaidData] = await Promise.all([
+        getMyOrders(),
+        getMyUnpaidOrders(),
+      ]);
+      setOrders(ordersData.map(mapOrderResponse));
+      setUnpaidSummary(unpaidData);
     } catch (err) {
-      console.error("Siparişler yüklenemedi:", err);
+      console.error("Siparişler veya ödenmemiş özet yüklenemedi:", err);
     } finally {
       setOrdersLoading(false);
+      setUnpaidLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchOrders();
-    const interval = setInterval(fetchOrders, 15000);
-    return () => clearInterval(interval);
-  }, [fetchOrders]);
+    void refreshOrdersAndUnpaid();
+    const interval = window.setInterval(() => void refreshOrdersAndUnpaid(), 15000);
+    return () => window.clearInterval(interval);
+  }, [refreshOrdersAndUnpaid]);
 
   useEffect(() => {
     if (!cartLoaded) return;
@@ -284,6 +301,13 @@ const CafeteriaOrderPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isUnpaidLimitReached) {
+      alert(
+        "Ödenmemiş sipariş limitine ulaştınız. Önce kasiyerde bekleyen ödemelerinizi tamamlayın.",
+      );
+      return;
+    }
+
     if (selectedItems.length === 0) {
       alert("Lütfen en az bir ürün seçiniz.");
       return;
@@ -310,7 +334,7 @@ const CafeteriaOrderPage: React.FC = () => {
       setSelectedTime("");
       setNote("");
       localStorage.removeItem(CART_STORAGE_KEY);
-      await fetchOrders();
+      await refreshOrdersAndUnpaid();
     } catch (err: any) {
       const msg =
         err.response?.data?.message || "Sipariş oluşturulurken bir hata oluştu.";
@@ -332,21 +356,126 @@ const CafeteriaOrderPage: React.FC = () => {
     return options;
   };
 
+  const unpaidWidgetMain =
+    unpaidCount === 0
+      ? "Ödenmemiş siparişiniz bulunmuyor."
+      : unpaidCount === 1
+        ? "1 adet ödenmemiş siparişiniz bulunuyor."
+        : unpaidCount === 2
+          ? "2 adet ödenmemiş siparişiniz bulunuyor."
+          : `${unpaidCount} adet ödenmemiş siparişiniz bulunuyor.`;
+
+  const unpaidWidgetSub =
+    unpaidCount === 2
+      ? "Limit sınırına yaklaşıyorsunuz; kasiyerde bekleyen ödemelerinizi tamamlamanızı öneririz."
+      : unpaidCount > 0 && unpaidCount < unpaidLimit
+        ? "Bu kayıtlar, teslimatta kasiyer tarafından «ödenmedi» olarak işaretlenen siparişlerdir. Ödemeyi kasiyerde tamamladığınızda liste güncellenir."
+        : null;
+
   return (
     <div className="min-h-screen bg-[#f8f8f8] flex flex-col">
       <header className="w-full border-b bg-[#d71920] text-white">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-6 py-6">
-          <h1 className="text-2xl font-semibold">Kafeterya Sipariş</h1>
-          <Link
-            to={isStudent ? "/ogrenci" : "/ogretim-elemani"}
-            className="text-sm underline hover:opacity-90"
-          >
-            {isStudent
-              ? "Öğrenci anasayfasına dön"
-              : "Öğretim elemanı anasayfasına dön"}
-          </Link>
+        <div className="max-w-7xl mx-auto flex flex-col gap-4 px-6 py-6 lg:flex-row lg:items-center lg:justify-between">
+          <h1 className="text-2xl font-semibold shrink-0">Kafeterya Sipariş</h1>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:flex-wrap sm:gap-4">
+            <div
+              className={`rounded-2xl border px-4 py-3 text-sm shadow-md max-w-md transition-colors ${
+                unpaidLoading
+                  ? "border-white/30 bg-white/10 text-white"
+                  : isUnpaidLimitReached
+                    ? "border-red-200 bg-white text-red-900"
+                    : unpaidCount > 0
+                      ? "border-amber-200 bg-amber-50 text-amber-950"
+                      : "border-emerald-200/80 bg-white/95 text-emerald-900"
+              }`}
+              role="status"
+              aria-live="polite"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1">
+                Ödenmemiş siparişlerim
+              </p>
+              {unpaidLoading ? (
+                <p className="text-slate-600 animate-pulse">Yükleniyor…</p>
+              ) : (
+                <>
+                  <p className="font-medium leading-snug">{unpaidWidgetMain}</p>
+                  {unpaidCount > 0 && (
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      Toplam açık tutar: {totalDebt.toFixed(2)} ₺
+                    </p>
+                  )}
+                  {unpaidWidgetSub && (
+                    <p className="mt-2 text-xs text-slate-600 leading-relaxed">{unpaidWidgetSub}</p>
+                  )}
+                  {unpaidCount > 0 && unpaidSummary && (
+                    <div className="mt-3">
+                      <button
+                        type="button"
+                        onClick={() => setShowUnpaidDetails((v) => !v)}
+                        className="text-xs font-semibold text-[#d71920] underline underline-offset-2 hover:opacity-90"
+                      >
+                        {showUnpaidDetails ? "Detayı gizle" : "Detayları göster"}
+                      </button>
+                      {showUnpaidDetails && (
+                        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-left space-y-2 max-h-56 overflow-y-auto">
+                          <p className="text-[11px] text-slate-500">
+                            Hazır bekleyen siparişler bu listede yer almaz; yalnızca kasiyerde
+                            ödenmedi kaydı oluşanlar sayılır.
+                          </p>
+                          {unpaidSummary.orders.map((u) => (
+                            <div
+                              key={u.id}
+                              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 border-b border-slate-200 pb-2 last:border-0 text-xs"
+                            >
+                              <div>
+                                <span className="font-mono font-medium text-slate-800">
+                                  {u.orderNumber || `#${u.id}`}
+                                </span>
+                                <span className="text-slate-500 ml-2">
+                                  {new Date(u.createdAtUtc).toLocaleString("tr-TR")}
+                                </span>
+                              </div>
+                              <span className="font-semibold text-[#d71920]">
+                                {u.totalPrice.toFixed(2)} ₺
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <Link
+              to={isStudent ? "/ogrenci" : "/ogretim-elemani"}
+              className="text-sm underline hover:opacity-90 text-center sm:text-left whitespace-nowrap"
+            >
+              {isStudent
+                ? "Öğrenci anasayfasına dön"
+                : "Öğretim elemanı anasayfasına dön"}
+            </Link>
+          </div>
         </div>
       </header>
+
+      {isUnpaidLimitReached && !unpaidLoading && (
+        <div
+          className="w-full border-b border-amber-200 bg-amber-50 px-4 py-3 text-center text-amber-950 shadow-sm"
+          role="alert"
+        >
+          <p className="max-w-3xl mx-auto text-sm sm:text-base font-medium leading-relaxed">
+            Şu anda yeni sipariş oluşturma hakkınız geçici olarak durduruldu: ödenmemiş kayıt
+            sınırına ({unpaidLimit} adet) ulaştınız. Önce kasiyerde bu siparişlerin ödemesini
+            tamamlayın.
+          </p>
+          <p className="max-w-3xl mx-auto text-sm mt-2 text-amber-900/90 leading-relaxed">
+            Ödeme tamamlandığında durumunuz otomatik güncellenir; ek bir işlem yapmanız gerekmez.
+          </p>
+        </div>
+      )}
 
       <main className="flex-1 px-4 py-8">
         <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -544,11 +673,26 @@ const CafeteriaOrderPage: React.FC = () => {
 
                     <button
                       type="submit"
-                      disabled={submitting}
-                      className="w-full rounded-xl bg-[#d71920] py-3 text-white font-semibold hover:opacity-90 disabled:opacity-50"
+                      disabled={submitting || isUnpaidLimitReached}
+                      title={
+                        isUnpaidLimitReached
+                          ? "Ödenmemiş sipariş limiti nedeniyle yeni sipariş verilemez"
+                          : undefined
+                      }
+                      className="w-full rounded-xl bg-[#d71920] py-3 text-white font-semibold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {submitting ? "Sipariş gönderiliyor..." : "Siparişi Tamamla"}
+                      {submitting
+                        ? "Sipariş gönderiliyor..."
+                        : isUnpaidLimitReached
+                          ? "Sipariş verilemiyor"
+                          : "Siparişi Tamamla"}
                     </button>
+                    {isUnpaidLimitReached && !unpaidLoading && (
+                      <p className="text-xs text-center text-amber-900 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 leading-relaxed">
+                        Kasiyerde bekleyen ödenmemiş kayıtlarınızı kapattığınızda buradan tekrar sipariş
+                        verebilirsiniz. Durum otomatik güncellenir.
+                      </p>
+                    )}
                   </form>
                 </>
               )}

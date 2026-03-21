@@ -1,4 +1,5 @@
 using ApiProject.Models;
+using ApiProject.Models.DTOs;
 using ApiProject.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,6 +16,51 @@ public class CashierOrdersController : ControllerBase
     public CashierOrdersController(IOrderManagementService orderManagementService)
     {
         _orderManagementService = orderManagementService;
+    }
+
+    [HttpGet("unpaid-risk-overview")]
+    public async Task<ActionResult<CashierUnpaidRiskOverviewDto>> GetUnpaidRiskOverview()
+    {
+        var data = await _orderManagementService.GetCashierUnpaidRiskOverviewAsync();
+        return Ok(data);
+    }
+
+    [HttpGet("unpaid-by-user")]
+    public async Task<ActionResult<List<OrderResponseDto>>> GetUnpaidByUser([FromQuery] int userId)
+    {
+        if (userId <= 0) return BadRequest(new { message = "Geçerli bir kullanıcı seçin." });
+        var list = await _orderManagementService.GetOpenNotPaidOrdersForUserAsync(userId);
+        return Ok(list);
+    }
+
+    [HttpPost("settle-all-unpaid")]
+    public async Task<ActionResult> SettleAllUnpaid([FromQuery] int userId)
+    {
+        if (userId <= 0) return BadRequest(new { message = "Geçerli bir kullanıcı seçin." });
+        try
+        {
+            var n = await _orderManagementService.SettleAllUnpaidDebtsForUserAsync(userId);
+            return Ok(new { settledCount = n, message = n > 0 ? $"{n} kayıt tahsil edildi." : "Açık borç yok." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id:int}/settle-debt")]
+    public async Task<ActionResult<OrderResponseDto>> SettleDebt(int id)
+    {
+        try
+        {
+            var updated = await _orderManagementService.SettleNotPaidDebtAsync(id);
+            if (updated == null) return NotFound();
+            return Ok(updated);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
     }
 
     [HttpGet]

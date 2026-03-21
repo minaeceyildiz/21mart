@@ -10,12 +10,19 @@ public interface IOrderManagementService
     Task<List<OrderResponseDto>> GetMyOrdersAsync(int userId);
     /// <param name="userSearch">Dolu ve 2+ karakter ise: eşleşen kullanıcı(lar)ın tüm sipariş geçmişi (iptal/ödendi dahil). Boşsa: kasiyer kuyruğu.</param>
     Task<List<OrderResponseDto>> GetCashierOrdersAsync(OrderStatus? status, bool? isPaid, string? userSearch);
+    Task<CashierUnpaidRiskOverviewDto> GetCashierUnpaidRiskOverviewAsync();
+    /// <summary>Kasiyer borç paneli: kullanıcının tüm NotPaid siparişleri.</summary>
+    Task<List<OrderResponseDto>> GetOpenNotPaidOrdersForUserAsync(int userId);
     Task<OrderResponseDto?> ApproveAsync(int orderId);
     Task<OrderResponseDto?> PreparingAsync(int orderId);
     Task<OrderResponseDto?> ReadyAsync(int orderId);
     Task<OrderResponseDto?> PaidAsync(int orderId);
     Task<OrderResponseDto?> NotPaidAsync(int orderId);
     Task<OrderResponseDto?> CancelAsync(int orderId);
+    /// <summary>NotPaid siparişte kasiyer tahsilatı: ödendi kapatır.</summary>
+    Task<OrderResponseDto?> SettleNotPaidDebtAsync(int orderId);
+    /// <summary>Kullanıcının tüm NotPaid siparişlerini ödendi yapar; kapatılan adet.</summary>
+    Task<int> SettleAllUnpaidDebtsForUserAsync(int userId);
 }
 
 public class OrderManagementService : IOrderManagementService
@@ -67,7 +74,42 @@ public class OrderManagementService : IOrderManagementService
             .OrderBy(o => o.CreatedAt)
             .ToListAsync();
 
-        return orders.Select(MapOrder).ToList();
+        var list = orders.Select(MapOrder).ToList();
+        await EnrichCashierOrdersWithUnpaidStatsAsync(list);
+        return list;
+    }
+
+    public async Task<CashierUnpaidRiskOverviewDto> GetCashierUnpaidRiskOverviewAsync()
+    {
+        var limit = CafeService.MaxNotPaidOrdersPerUser;
+        var groups = await _context.Orders
+            .AsNoTracking()
+            .Where(o => o.Status == OrderStatus.NotPaid)
+            .GroupBy(o => o.UserId)
+            .Select(g => new { UserId = g.Key, C = g.Count() })
+            .ToListAsync();
+
+        return new CashierUnpaidRiskOverviewDto
+        {
+            UnpaidLimit = limit,
+            UsersAtOrOverLimit = groups.Count(g => g.C >= limit),
+            TotalOpenNotPaidOrders = groups.Sum(g => g.C)
+        };
+    }
+
+    public async Task<List<OrderResponseDto>> GetOpenNotPaidOrdersForUserAsync(int userId)
+    {
+        var orders = await _context.Orders
+            .Where(o => o.UserId == userId && o.Status == OrderStatus.NotPaid)
+            .Include(o => o.User)
+            .Include(o => o.OrderItems)
+            .ThenInclude(oi => oi.MenuItem)
+            .OrderBy(o => o.CreatedAt)
+            .ToListAsync();
+
+        var list = orders.Select(MapOrder).ToList();
+        await EnrichCashierOrdersWithUnpaidStatsAsync(list);
+        return list;
     }
 
     /// <summary>
@@ -97,7 +139,63 @@ public class OrderManagementService : IOrderManagementService
             .OrderByDescending(o => o.CreatedAt)
             .ToListAsync();
 
-        return orders.Select(MapOrder).ToList();
+        var list = orders.Select(MapOrder).ToList();
+        await EnrichCashierOrdersWithUnpaidStatsAsync(list);
+        return list;
+    }
+
+    private async Task EnrichCashierOrdersWithUnpaidStatsAsync(List<OrderResponseDto> list)
+    {
+        if (list.Count == 0) return;
+
+        var userIds = list.Select(o => o.UserId).Distinct().ToList();
+        var rows = await _context.Orders
+            .AsNoTracking()
+            .Where(o => o.Status == OrderStatus.NotPaid && userIds.Contains(o.UserId))
+            .GroupBy(o => o.UserId)
+            .Select(g => new { UserId = g.Key, Count = g.Count(), Total = g.Sum(x => x.TotalAmount) })
+            .ToListAsync();
+
+        var dict = rows.ToDictionary(x => x.UserId, x => (x.Count, x.Total));
+        foreach (var dto in list)
+        {
+            if (dict.TryGetValue(dto.UserId, out var t))
+            {
+                dto.CustomerNotPaidCount = t.Count;
+                dto.CustomerNotPaidTotal = t.Total;
+            }
+            else
+            {
+                dto.CustomerNotPaidCount = 0;
+                dto.CustomerNotPaidTotal = 0;
+            }
+        }
+    }
+
+    private async Task EnrichSingleDtoUnpaidStatsAsync(OrderResponseDto dto)
+    {
+        var agg = await _context.Orders
+            .AsNoTracking()
+            .Where(o => o.UserId == dto.UserId && o.Status == OrderStatus.NotPaid)
+            .GroupBy(o => o.UserId)
+            .Select(g => new { Count = g.Count(), Total = g.Sum(x => x.TotalAmount) })
+            .FirstOrDefaultAsync();
+
+        if (agg == null)
+        {
+            dto.CustomerNotPaidCount = 0;
+            dto.CustomerNotPaidTotal = 0;
+        }
+        else
+        {
+            dto.CustomerNotPaidCount = agg.Count;
+            dto.CustomerNotPaidTotal = agg.Total;
+        }
+    }
+
+    private static async Task<int> CountUserNotPaidOrdersAsync(AppDbContext ctx, int userId)
+    {
+        return await ctx.Orders.CountAsync(o => o.UserId == userId && o.Status == OrderStatus.NotPaid);
     }
 
     public async Task<OrderResponseDto?> ApproveAsync(int orderId)
@@ -171,6 +269,13 @@ public class OrderManagementService : IOrderManagementService
         if (order.Status != OrderStatus.Ready)
             throw new InvalidOperationException("Sipariş PAID durumuna geçmeden önce READY olmalıdır.");
 
+        var notPaidCount = await CountUserNotPaidOrdersAsync(_context, order.UserId);
+        if (notPaidCount >= CafeService.MaxNotPaidOrdersPerUser)
+        {
+            throw new InvalidOperationException(
+                "Bu kullanıcının ödenmemiş (NotPaid) kayıt limiti dolu. Önce kasiyerde mevcut borçların tahsilatını yapın; ardından bu siparişi ödendi olarak işaretleyebilirsiniz.");
+        }
+
         order.Status = OrderStatus.Paid;
         order.IsPaid = true;
         order.PaidAt = DateTime.UtcNow;
@@ -191,6 +296,13 @@ public class OrderManagementService : IOrderManagementService
         EnsureNotCancelled(order);
         if (order.Status != OrderStatus.Ready)
             throw new InvalidOperationException("Sipariş NOT_PAID durumuna geçmeden önce READY olmalıdır.");
+
+        var notPaidCount = await CountUserNotPaidOrdersAsync(_context, order.UserId);
+        if (notPaidCount >= CafeService.MaxNotPaidOrdersPerUser)
+        {
+            throw new InvalidOperationException(
+                "Ödenmemiş kayıt limiti dolu. Önce mevcut borçları tahsil edin; bu sipariş ödenmedi olarak işaretlenemez.");
+        }
 
         order.Status = OrderStatus.NotPaid;
         order.IsPaid = false;
@@ -219,6 +331,64 @@ public class OrderManagementService : IOrderManagementService
             $"#{order.OrderNumber} numaralı siparişiniz iptal edildi.");
 
         return MapOrder(order);
+    }
+
+    public async Task<OrderResponseDto?> SettleNotPaidDebtAsync(int orderId)
+    {
+        var order = await FindOrder(orderId);
+        if (order == null) return null;
+
+        if (order.Status != OrderStatus.NotPaid)
+            throw new InvalidOperationException("Tahsilat yalnızca ödenmemiş (NotPaid) siparişlerde yapılabilir.");
+
+        order.Status = OrderStatus.Paid;
+        order.IsPaid = true;
+        order.PaidAt = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        await SendOrderNotificationAsync(order, NotificationType.OrderPaid,
+            "Ödeme Alındı",
+            $"#{order.OrderNumber} numaralı ödenmemiş kaydınız tahsil edildi.");
+
+        var dto = MapOrder(order);
+        await EnrichSingleDtoUnpaidStatsAsync(dto);
+        return dto;
+    }
+
+    public async Task<int> SettleAllUnpaidDebtsForUserAsync(int userId)
+    {
+        var debts = await _context.Orders
+            .Where(o => o.UserId == userId && o.Status == OrderStatus.NotPaid)
+            .Include(o => o.User)
+            .ToListAsync();
+
+        if (debts.Count == 0) return 0;
+
+        foreach (var o in debts)
+        {
+            o.Status = OrderStatus.Paid;
+            o.IsPaid = true;
+            o.PaidAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+
+        var user = debts[0].User;
+        try
+        {
+            await _notificationService.SendNotificationAsync(
+                "Borç tahsilatı tamamlandı",
+                $"{debts.Count} adet ödenmemiş sipariş kaydınız tahsil edildi.",
+                NotificationType.OrderPaid,
+                user.Email ?? "",
+                userId);
+        }
+        catch
+        {
+            /* ignore */
+        }
+
+        return debts.Count;
     }
 
     private async Task<Order?> FindOrder(int orderId)
@@ -272,6 +442,8 @@ public class OrderManagementService : IOrderManagementService
             PaidAt = order.PaidAt,
             PickupTime = order.PickupTime,
             Note = order.Note,
+            CustomerNotPaidCount = 0,
+            CustomerNotPaidTotal = 0,
             OrderItems = order.OrderItems.Select(oi => new OrderItemResponseDto
             {
                 Id = oi.Id,
