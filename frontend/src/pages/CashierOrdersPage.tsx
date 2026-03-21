@@ -35,6 +35,7 @@ const CashierOrdersPage: React.FC = () => {
   const [debtModalOrders, setDebtModalOrders] = useState<OrderResponseDto[]>([]);
   const [debtModalLoading, setDebtModalLoading] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [ordersPage, setOrdersPage] = useState(0);
 
   const isHistoryMode = debouncedSearch.trim().length >= 2;
   const unpaidLimit = riskOverview?.unpaidLimit ?? 3;
@@ -124,6 +125,7 @@ const CashierOrdersPage: React.FC = () => {
   };
 
   useEffect(() => {
+    setOrdersPage(0);
     void refresh();
   }, [refresh]);
 
@@ -163,7 +165,7 @@ const CashierOrdersPage: React.FC = () => {
         <div className="max-w-6xl mx-auto flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between px-6 py-6">
           <div>
             <h1 className="text-2xl font-semibold">Kasiyer – Sipariş Yönetimi</h1>
-            <p className="text-sm opacity-90">Hoş geldiniz, {user?.name || "Kasiyer"}</p>
+            <p className="text-sm opacity-90">Hoş Geldiniz, {user?.name || "Kasiyer"}</p>
           </div>
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             {riskOverview && (
@@ -302,7 +304,7 @@ const CashierOrdersPage: React.FC = () => {
           )}
 
           <div className="space-y-4">
-            {orders.map((o) => (
+            {orders.slice(ordersPage * 3, ordersPage * 3 + 3).map((o) => (
               <div
                 key={o.id}
                 className={`bg-white rounded-2xl border shadow-sm p-6 ${riskCardClass(o)}`}
@@ -486,6 +488,31 @@ const CashierOrdersPage: React.FC = () => {
               </div>
             ))}
           </div>
+          {orders.length > 3 && (
+            <div className="flex items-center justify-center gap-3 mt-4">
+              <button
+                onClick={() => setOrdersPage((p) => Math.max(0, p - 1))}
+                disabled={ordersPage === 0}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                ← Önceki
+              </button>
+              <span className="text-sm text-slate-500">
+                {ordersPage + 1} / {Math.ceil(orders.length / 3)}
+              </span>
+              <button
+                onClick={() =>
+                  setOrdersPage((p) =>
+                    Math.min(Math.ceil(orders.length / 3) - 1, p + 1),
+                  )
+                }
+                disabled={ordersPage >= Math.ceil(orders.length / 3) - 1}
+                className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Sonraki →
+              </button>
+            </div>
+          )}
         </div>
       </main>
 

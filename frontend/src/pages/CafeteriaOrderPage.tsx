@@ -180,6 +180,8 @@ const CafeteriaOrderPage: React.FC = () => {
   const [showUnpaidDetails, setShowUnpaidDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [cartLoaded, setCartLoaded] = useState(false);
+  const [activeOrdersPage, setActiveOrdersPage] = useState(0);
+  const [pastOrdersPage, setPastOrdersPage] = useState(0);
 
   const unpaidCount = unpaidSummary?.count ?? 0;
   const unpaidLimit = unpaidSummary?.unpaidLimit ?? 3;
@@ -345,13 +347,14 @@ const CafeteriaOrderPage: React.FC = () => {
   };
 
   const getTimeOptions = () => {
-    const now = new Date();
-    const options = [];
-    for (let i = 1; i <= 5; i++) {
-      const time = new Date(now.getTime() + i * 60 * 60 * 1000);
-      const hours = time.getHours().toString().padStart(2, "0");
-      const minutes = time.getMinutes().toString().padStart(2, "0");
-      options.push(`${hours}:${minutes}`);
+    const options: string[] = [];
+    for (let h = 9; h <= 17; h++) {
+      for (const m of [0, 30]) {
+        if (h === 17 && m === 30) break;
+        options.push(
+          `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`,
+        );
+      }
     }
     return options;
   };
@@ -712,55 +715,84 @@ const CafeteriaOrderPage: React.FC = () => {
                   Aktif sipariş bulunmuyor.
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {activeOrders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                          <p className="text-sm text-slate-500">
-                            Sipariş #{order.id}
-                          </p>
-                          <p className="text-sm text-slate-500">
-                            {order.createdAt} • Teslim: {order.selectedTime}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            statusStyles[order.status] || "bg-gray-100 text-gray-800"
-                          }`}
+                <>
+                  <div className="space-y-4">
+                    {activeOrders
+                      .slice(activeOrdersPage * 3, activeOrdersPage * 3 + 3)
+                      .map((order) => (
+                        <div
+                          key={order.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                         >
-                          {order.status}
-                        </span>
-                      </div>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <p className="text-sm text-slate-500">
+                                Sipariş #{order.id}
+                              </p>
+                              <p className="text-sm text-slate-500">
+                                {order.createdAt} • Teslim: {order.selectedTime}
+                              </p>
+                            </div>
 
-                      <div className="space-y-1 mb-3">
-                        {order.items.map((item, index) => (
-                          <p
-                            key={`${order.id}-${item.menuItemId}-${index}`}
-                            className="text-sm text-slate-700"
-                          >
-                            <span className="font-medium">{item.name}</span> x{" "}
-                            {item.quantity}
-                          </p>
-                        ))}
-                      </div>
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                statusStyles[order.status] || "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              {order.status}
+                            </span>
+                          </div>
 
-                      {order.note && (
-                        <p className="mb-3 text-sm text-slate-600">
-                          <span className="font-medium">Not:</span> {order.note}
-                        </p>
-                      )}
+                          <div className="space-y-1 mb-3">
+                            {order.items.map((item, index) => (
+                              <p
+                                key={`${order.id}-${item.menuItemId}-${index}`}
+                                className="text-sm text-slate-700"
+                              >
+                                <span className="font-medium">{item.name}</span> x{" "}
+                                {item.quantity}
+                              </p>
+                            ))}
+                          </div>
 
-                      <span className="font-semibold text-slate-900">
-                        {order.totalPrice.toFixed(2)} TL
+                          {order.note && (
+                            <p className="mb-3 text-sm text-slate-600">
+                              <span className="font-medium">Not:</span> {order.note}
+                            </p>
+                          )}
+
+                          <span className="font-semibold text-slate-900">
+                            {order.totalPrice.toFixed(2)} TL
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  {activeOrders.length > 3 && (
+                    <div className="flex items-center justify-center gap-3 mt-4">
+                      <button
+                        onClick={() => setActiveOrdersPage((p) => Math.max(0, p - 1))}
+                        disabled={activeOrdersPage === 0}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        ← Önceki
+                      </button>
+                      <span className="text-sm text-slate-500">
+                        {activeOrdersPage + 1} / {Math.ceil(activeOrders.length / 3)}
                       </span>
+                      <button
+                        onClick={() =>
+                          setActiveOrdersPage((p) =>
+                            Math.min(Math.ceil(activeOrders.length / 3) - 1, p + 1),
+                          )
+                        }
+                        disabled={activeOrdersPage >= Math.ceil(activeOrders.length / 3) - 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Sonraki →
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -778,55 +810,84 @@ const CafeteriaOrderPage: React.FC = () => {
                   Geçmiş sipariş bulunmuyor.
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {pastOrders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div>
-                          <p className="text-sm text-slate-500">
-                            Sipariş #{order.id}
-                          </p>
-                          <p className="text-sm text-slate-500">
-                            {order.createdAt} • Teslim: {order.selectedTime}
-                          </p>
-                        </div>
-
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            statusStyles[order.status] || "bg-gray-100 text-gray-800"
-                          }`}
+                <>
+                  <div className="space-y-4">
+                    {pastOrders
+                      .slice(pastOrdersPage * 3, pastOrdersPage * 3 + 3)
+                      .map((order) => (
+                        <div
+                          key={order.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
                         >
-                          {order.status}
-                        </span>
-                      </div>
+                          <div className="flex items-start justify-between gap-3 mb-3">
+                            <div>
+                              <p className="text-sm text-slate-500">
+                                Sipariş #{order.id}
+                              </p>
+                              <p className="text-sm text-slate-500">
+                                {order.createdAt} • Teslim: {order.selectedTime}
+                              </p>
+                            </div>
 
-                      <div className="space-y-1 mb-3">
-                        {order.items.map((item, index) => (
-                          <p
-                            key={`${order.id}-${item.menuItemId}-${index}`}
-                            className="text-sm text-slate-700"
-                          >
-                            <span className="font-medium">{item.name}</span> x{" "}
-                            {item.quantity}
-                          </p>
-                        ))}
-                      </div>
+                            <span
+                              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                                statusStyles[order.status] || "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              {order.status}
+                            </span>
+                          </div>
 
-                      {order.note && (
-                        <p className="mb-3 text-sm text-slate-600">
-                          <span className="font-medium">Not:</span> {order.note}
-                        </p>
-                      )}
+                          <div className="space-y-1 mb-3">
+                            {order.items.map((item, index) => (
+                              <p
+                                key={`${order.id}-${item.menuItemId}-${index}`}
+                                className="text-sm text-slate-700"
+                              >
+                                <span className="font-medium">{item.name}</span> x{" "}
+                                {item.quantity}
+                              </p>
+                            ))}
+                          </div>
 
-                      <span className="font-semibold text-slate-900">
-                        {order.totalPrice.toFixed(2)} TL
+                          {order.note && (
+                            <p className="mb-3 text-sm text-slate-600">
+                              <span className="font-medium">Not:</span> {order.note}
+                            </p>
+                          )}
+
+                          <span className="font-semibold text-slate-900">
+                            {order.totalPrice.toFixed(2)} TL
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                  {pastOrders.length > 3 && (
+                    <div className="flex items-center justify-center gap-3 mt-4">
+                      <button
+                        onClick={() => setPastOrdersPage((p) => Math.max(0, p - 1))}
+                        disabled={pastOrdersPage === 0}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        ← Önceki
+                      </button>
+                      <span className="text-sm text-slate-500">
+                        {pastOrdersPage + 1} / {Math.ceil(pastOrders.length / 3)}
                       </span>
+                      <button
+                        onClick={() =>
+                          setPastOrdersPage((p) =>
+                            Math.min(Math.ceil(pastOrders.length / 3) - 1, p + 1),
+                          )
+                        }
+                        disabled={pastOrdersPage >= Math.ceil(pastOrders.length / 3) - 1}
+                        className="px-3 py-1.5 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Sonraki →
+                      </button>
                     </div>
-                  ))}
-                </div>
+                  )}
+                </>
               )}
             </div>
           </aside>
