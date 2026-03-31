@@ -12,6 +12,7 @@ public class OrderCleanupService : BackgroundService
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OrderCleanupService> _logger;
     private readonly TimeSpan _checkInterval = TimeSpan.FromMinutes(1); // Her 1 dakikada bir kontrol et
+    private static readonly TimeSpan NotPaidCutoffLocalTime = new(17, 45, 0); // 17:45
 
     public OrderCleanupService(IServiceProvider serviceProvider, ILogger<OrderCleanupService> logger)
     {
@@ -25,7 +26,7 @@ public class OrderCleanupService : BackgroundService
         {
             try
             {
-                await CleanupOldReadyOrdersAsync();
+                await MarkOrdersAsNotPaidAfterCutoffAsync();
             }
             catch (Exception ex)
             {
@@ -36,29 +37,66 @@ public class OrderCleanupService : BackgroundService
         }
     }
 
-    private async Task CleanupOldReadyOrdersAsync()
+    private async Task MarkOrdersAsNotPaidAfterCutoffAsync()
     {
         using var scope = _serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        // Durumu 'Ready' olan ve 30 dakikayı geçen siparişleri bul
-        var cutoffTime = DateTime.UtcNow.AddMinutes(-30);
-        
-        var oldReadyOrders = await context.Orders
-            .Where(o => o.Status == OrderStatus.Ready && o.CreatedAt <= cutoffTime)
+        // İş kuralı:
+        // 17:45'e kadar "ödendi" yapılmayan siparişler, 17:45 sonrasında otomatik "ödenmedi" (NotPaid) olur.
+        // Limit tanımına uyum için yalnızca READY durumundaki (ve hâlâ ödenmemiş) siparişleri dönüştürüyoruz.
+        var nowUtc = DateTime.UtcNow;
+        var turkeyTz = ResolveTurkeyTimeZone();
+
+        var candidateReadyOrders = await context.Orders
+            .Where(o => o.Status == OrderStatus.Ready && !o.IsPaid)
             .ToListAsync();
 
-        if (oldReadyOrders.Any())
-        {
-            foreach (var order in oldReadyOrders)
-            {
-                order.Status = OrderStatus.Cancelled;
-                _logger.LogInformation("Sipariş iptal edildi. OrderId: {OrderId}, UserId: {UserId}, Tarih: {CreatedAt}", 
-                    order.Id, order.UserId, order.CreatedAt);
-            }
+        if (!candidateReadyOrders.Any())
+            return;
 
+        var affectedCount = 0;
+        foreach (var order in candidateReadyOrders)
+        {
+            var createdLocal = TimeZoneInfo.ConvertTimeFromUtc(order.CreatedAt, turkeyTz);
+            var cutoffLocalDateTime = createdLocal.Date + NotPaidCutoffLocalTime;
+            var cutoffUtc = TimeZoneInfo.ConvertTimeToUtc(cutoffLocalDateTime, turkeyTz);
+
+            if (nowUtc >= cutoffUtc)
+            {
+                order.Status = OrderStatus.NotPaid;
+                order.IsPaid = false;
+                affectedCount++;
+                _logger.LogInformation(
+                    "Sipariş otomatik NotPaid yapıldı. OrderId: {OrderId}, UserId: {UserId}, CreatedAtUtc: {CreatedAtUtc}, CutoffUtc: {CutoffUtc}",
+                    order.Id, order.UserId, order.CreatedAt, cutoffUtc);
+            }
+        }
+
+        if (affectedCount > 0)
+        {
             await context.SaveChangesAsync();
-            _logger.LogInformation("{Count} adet sipariş otomatik olarak iptal edildi.", oldReadyOrders.Count);
+            _logger.LogInformation("{Count} adet READY sipariş, 17:45 kuralı ile NotPaid durumuna geçirildi.", affectedCount);
+        }
+    }
+
+    private static TimeZoneInfo ResolveTurkeyTimeZone()
+    {
+        // Windows: "Turkey Standard Time", Linux/macOS: "Europe/Istanbul"
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById("Turkey Standard Time");
+        }
+        catch
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul");
+            }
+            catch
+            {
+                return TimeZoneInfo.Local;
+            }
         }
     }
 }
