@@ -12,6 +12,7 @@ public interface ICafeService
     Task<List<CafeteriaOrderResponseDto>> GetUserOrdersAsync(int userId);
     /// <summary>Durumu NotPaid (Ödenmedi) olan siparişlerin sayısı ve listesi.</summary>
     Task<MyUnpaidOrdersSummaryDto> GetMyNotPaidOrdersAsync(int userId);
+    Task<List<PickupTimeDensityDto>> GetPickupTimeDensityAsync();
 }
 
 public class CafeService : ICafeService
@@ -189,6 +190,27 @@ public class CafeService : ICafeService
             Status = StatusToTurkish.GetValueOrDefault(order.Status, "Bilinmeyen"),
             CreatedAt = createdAt
         };
+    }
+
+    public async Task<List<PickupTimeDensityDto>> GetPickupTimeDensityAsync()
+    {
+        var today = DateTime.UtcNow.Date;
+
+        var density = await _context.Orders
+            .Where(o => o.CreatedAt >= today
+                        && o.PickupTime != null
+                        && o.Status != OrderStatus.Cancelled
+                        && o.Status != OrderStatus.Paid
+                        && o.Status != OrderStatus.NotPaid)
+            .GroupBy(o => o.PickupTime!)
+            .Select(g => new PickupTimeDensityDto
+            {
+                Time = g.Key,
+                OrderCount = g.Count()
+            })
+            .ToListAsync();
+
+        return density;
     }
 
     private static string GenerateOrderNumber()

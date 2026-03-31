@@ -71,3 +71,13 @@ export const getMyUnpaidOrders = async (): Promise<MyUnpaidOrdersSummary> => {
   const response = await apiClient.get<MyUnpaidOrdersSummary>('/Order/my/unpaid');
   return response.data;
 };
+
+export interface PickupTimeDensity {
+  time: string;
+  orderCount: number;
+}
+
+export const getPickupTimeDensity = async (): Promise<PickupTimeDensity[]> => {
+  const response = await apiClient.get<PickupTimeDensity[]>('/orders/pickup-density');
+  return response.data;
+};

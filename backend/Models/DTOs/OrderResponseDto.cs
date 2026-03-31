@@ -35,6 +35,12 @@ public class MyUnpaidOrdersSummaryDto
     public List<CafeteriaOrderResponseDto> Orders { get; set; } = new();
 }
 
+public class PickupTimeDensityDto
+{
+    public string Time { get; set; } = string.Empty;
+    public int OrderCount { get; set; }
+}
+
 /// <summary>Kasiyer üst bilgi: limitteki müşteri ve açık borç özeti.</summary>
 public class CashierUnpaidRiskOverviewDto
 {

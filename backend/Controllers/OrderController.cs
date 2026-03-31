@@ -74,6 +74,14 @@ public class OrderController : ControllerBase
         return Ok(summary);
     }
 
+    [HttpGet("pickup-density")]
+    [AllowAnonymous]
+    public async Task<ActionResult<List<PickupTimeDensityDto>>> GetPickupTimeDensity()
+    {
+        var density = await _cafeService.GetPickupTimeDensityAsync();
+        return Ok(density);
+    }
+
     private int? GetCurrentUserId()
     {
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;

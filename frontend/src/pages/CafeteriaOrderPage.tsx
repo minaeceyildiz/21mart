@@ -6,9 +6,11 @@ import {
   createOrder,
   getMyOrders,
   getMyUnpaidOrders,
+  getPickupTimeDensity,
   MenuItemFromApi,
   MyUnpaidOrdersSummary,
   OrderResponse,
+  PickupTimeDensity,
 } from "../services/cafeteriaService";
 
 interface MenuItem {
@@ -182,6 +184,7 @@ const CafeteriaOrderPage: React.FC = () => {
   const [cartLoaded, setCartLoaded] = useState(false);
   const [activeOrdersPage, setActiveOrdersPage] = useState(0);
   const [pastOrdersPage, setPastOrdersPage] = useState(0);
+  const [density, setDensity] = useState<PickupTimeDensity[]>([]);
 
   const unpaidCount = unpaidSummary?.count ?? 0;
   const unpaidLimit = unpaidSummary?.unpaidLimit ?? 3;
@@ -219,12 +222,14 @@ const CafeteriaOrderPage: React.FC = () => {
 
   const refreshOrdersAndUnpaid = useCallback(async () => {
     try {
-      const [ordersData, unpaidData] = await Promise.all([
+      const [ordersData, unpaidData, densityData] = await Promise.all([
         getMyOrders(),
         getMyUnpaidOrders(),
+        getPickupTimeDensity(),
       ]);
       setOrders(ordersData.map(mapOrderResponse));
       setUnpaidSummary(unpaidData);
+      setDensity(densityData);
     } catch (err) {
       console.error("Siparişler veya ödenmemiş özet yüklenemedi:", err);
     } finally {
@@ -357,6 +362,26 @@ const CafeteriaOrderPage: React.FC = () => {
       }
     }
     return options;
+  };
+
+  const densityMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    density.forEach((d) => {
+      map[d.time] = d.orderCount;
+    });
+    return map;
+  }, [density]);
+
+  const maxDensity = useMemo(
+    () => Math.max(1, ...Object.values(densityMap)),
+    [densityMap],
+  );
+
+  const getDensityLabel = (count: number) => {
+    if (count === 0) return { text: "Sakin", color: "text-emerald-600", bg: "bg-emerald-500" };
+    if (count <= Math.ceil(maxDensity * 0.33)) return { text: "Az Yoğun", color: "text-emerald-600", bg: "bg-emerald-500" };
+    if (count <= Math.ceil(maxDensity * 0.66)) return { text: "Orta", color: "text-amber-600", bg: "bg-amber-500" };
+    return { text: "Yoğun", color: "text-red-600", bg: "bg-red-500" };
   };
 
   const unpaidWidgetMain =
@@ -653,12 +678,45 @@ const CafeteriaOrderPage: React.FC = () => {
                         required
                       >
                         <option value="">Saat seçiniz</option>
-                        {getTimeOptions().map((time) => (
-                          <option key={time} value={time}>
-                            {time}
-                          </option>
-                        ))}
+                        {getTimeOptions().map((time) => {
+                          const count = densityMap[time] || 0;
+                          const label = getDensityLabel(count);
+                          return (
+                            <option key={time} value={time}>
+                              {time} — {label.text} ({count} sipariş)
+                            </option>
+                          );
+                        })}
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-2">
+                        Saat Yoğunluğu
+                      </label>
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {getTimeOptions().map((time) => {
+                          const count = densityMap[time] || 0;
+                          const info = getDensityLabel(count);
+                          const pct = maxDensity > 0 ? Math.max(4, (count / maxDensity) * 100) : 4;
+                          return (
+                            <div key={time} className="flex items-center gap-2 text-xs">
+                              <span className="w-12 font-medium text-slate-700 shrink-0">
+                                {time}
+                              </span>
+                              <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${info.bg}`}
+                                  style={{ width: `${count === 0 ? 0 : pct}%` }}
+                                />
+                              </div>
+                              <span className={`w-14 text-right font-semibold ${info.color} shrink-0`}>
+                                {info.text}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <div>
