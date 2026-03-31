@@ -27,7 +27,7 @@ const InstructorDashboard: React.FC = () => {
           </h1>
           <div className="flex items-center gap-4">
             <span className="text-sm">
-              Hoşgeldiniz, {user?.name || "Öğretim Elemanı"}
+              Hoş Geldiniz, {user?.name || "Öğretim Elemanı"}
             </span>
             <NotificationBell />
             <button
