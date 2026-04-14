@@ -378,10 +378,10 @@ const CafeteriaOrderPage: React.FC = () => {
   );
 
   const getDensityLabel = (count: number) => {
-    if (count === 0) return { text: "Sakin", color: "text-emerald-600", bg: "bg-emerald-500" };
-    if (count <= Math.ceil(maxDensity * 0.33)) return { text: "Az Yoğun", color: "text-emerald-600", bg: "bg-emerald-500" };
-    if (count <= Math.ceil(maxDensity * 0.66)) return { text: "Orta", color: "text-amber-600", bg: "bg-amber-500" };
-    return { text: "Yoğun", color: "text-red-600", bg: "bg-red-500" };
+    if (count === 0) return { text: "Sakin", color: "text-emerald-700", bg: "bg-emerald-600" };
+    if (count <= Math.ceil(maxDensity * 0.33)) return { text: "Az Yoğun", color: "text-emerald-700", bg: "bg-emerald-600" };
+    if (count <= Math.ceil(maxDensity * 0.66)) return { text: "Orta", color: "text-amber-700", bg: "bg-amber-500" };
+    return { text: "Yoğun", color: "text-red-700", bg: "bg-red-600" };
   };
 
   const unpaidWidgetMain =
@@ -691,31 +691,47 @@ const CafeteriaOrderPage: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-2">
+                      <label className="block text-sm font-semibold text-slate-800 mb-2">
                         Saat Yoğunluğu
                       </label>
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        {getTimeOptions().map((time) => {
-                          const count = densityMap[time] || 0;
-                          const info = getDensityLabel(count);
-                          const pct = maxDensity > 0 ? Math.max(4, (count / maxDensity) * 100) : 4;
-                          return (
-                            <div key={time} className="flex items-center gap-2 text-xs">
-                              <span className="w-12 font-medium text-slate-700 shrink-0">
-                                {time}
-                              </span>
-                              <div className="flex-1 h-4 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="bg-white rounded-xl border-2 border-slate-300 p-4 shadow-sm">
+                        <div className="flex items-end gap-1.5 h-32">
+                          {getTimeOptions().map((time) => {
+                            const count = densityMap[time] || 0;
+                            const info = getDensityLabel(count);
+                            const heightPct = maxDensity > 0 ? Math.max(8, (count / maxDensity) * 100) : 8;
+                            return (
+                              <div
+                                key={time}
+                                className="flex-1 flex flex-col items-center justify-end h-full group relative"
+                              >
+                                <div className="absolute bottom-full mb-1 hidden group-hover:flex flex-col items-center z-10">
+                                  <span className="bg-slate-900 text-white text-[11px] font-semibold rounded-md px-2 py-1 whitespace-nowrap shadow-lg">
+                                    {time} — {count} sipariş
+                                  </span>
+                                </div>
                                 <div
-                                  className={`h-full rounded-full transition-all ${info.bg}`}
-                                  style={{ width: `${count === 0 ? 0 : pct}%` }}
+                                  className={`w-full rounded-t-md transition-all shadow-sm ${count === 0 ? "bg-slate-200" : info.bg}`}
+                                  style={{ height: `${count === 0 ? 8 : heightPct}%` }}
                                 />
                               </div>
-                              <span className={`w-14 text-right font-semibold ${info.color} shrink-0`}>
-                                {info.text}
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-1.5 mt-2 border-t border-slate-200 pt-2">
+                          {getTimeOptions().map((time, i) => (
+                            <div key={time} className="flex-1 text-center">
+                              <span className="text-[9px] font-bold text-slate-600 leading-none">
+                                {i % 2 === 0 ? time : ""}
                               </span>
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
+                        <div className="flex items-center justify-center gap-4 mt-3 text-xs font-semibold text-slate-700">
+                          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block shadow-sm" /> Sakin</span>
+                          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block shadow-sm" /> Orta</span>
+                          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block shadow-sm" /> Yoğun</span>
+                        </div>
                       </div>
                     </div>
 
